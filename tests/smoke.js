@@ -34,14 +34,35 @@ const receipt = (page, label) => page.$$eval('#receipt dl > *', (els, label) => 
   for (let i = 0; i < els.length - 1; i++) { const t = els[i].textContent.trim(); if (els[i].tagName === 'DT' && (t === label || t.startsWith(label + ' '))) return els[i + 1].textContent.trim(); }
   return null;
 }, label);
+const ctlBoxes = (page) => page.$$eval('#tour .tour-ctl .btn', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y + window.scrollY), Math.round(r.width), Math.round(r.height)]; }));
+async function buttonsStayPut(page, name) {
+  const boxes = [await ctlBoxes(page)];
+  for (let i = 0; i < 12; i++) { await page.click('#tour .tour-ctl [data-act=tourGo]:last-child'); await page.waitForTimeout(30); boxes.push(await ctlBoxes(page)); }
+  const moved = boxes.findIndex((b) => JSON.stringify(b) !== JSON.stringify(boxes[0]));
+  check(boxes[0].length === 3 && moved < 0, `${name}: Back, Open page and Next stay in the same place on all 13 tour stops${moved >= 0 ? ` (moved at stop ${moved + 1})` : ''}`);
+  await page.click('#tour .tour-list [data-act=tourGo][data-i="0"]');
+}
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: true });
 
 async function flows(page, name) {
   check(/start to finish/.test((await page.textContent('main')) || ''), `${name}: opens on the Start page`);
   await shot(page, `${name}-start`);
+  await buttonsStayPut(page, name);
+
+  await page.click('[data-act=tourStart]'); await page.waitForTimeout(80);
+  let stops = 0;
+  while (stops < 20 && await page.$('#tourDock')) {
+    stops++; if (stops === 3) await shot(page, `${name}-tour-stop3`);
+    await page.click('#tourDock [data-act=tourNext]'); await page.waitForTimeout(60);
+  }
+  const landed = await page.$eval('#nav [aria-current=page]', (e) => e.textContent.trim());
+  check(stops === 13 && landed.startsWith('Today'), `${name}: Next at the bottom of each page walks all ${stops} stops, then ends the tour on ${landed}`);
+
+  await page.click('[data-act=nav][data-v=welcome]');
   await page.click('.tour-list [data-act=tourGo][data-i="2"]');
   await page.click('[data-act=tourShow]'); await page.waitForTimeout(120);
-  check(!!(await page.$('#qsum')), `${name}: the tour's "Show me" opens the example job`);
+  check(!!(await page.$('#qsum')) && !!(await page.$('#tourDock')), `${name}: Open page from the tour opens the example job, with the tour continuing at the bottom`);
+  await page.click('#tourDock [data-act=tourEnd]');
   if (name === 'site') {
     await page.click('[data-act=nav][data-v=inventory]'); await page.waitForTimeout(60);
     check(!!(await page.$('.pvbar')) && !!(await page.$('.note.pvn')), `${name}: the public preview says what is hidden`);
@@ -100,6 +121,7 @@ async function flows(page, name) {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(url); await page.waitForTimeout(400);
     if (name === 'site-phone-dark') {
+      await buttonsStayPut(page, name);
       for (const v of ['welcome', 'today', 'inventory', 'storefront', 'bookings']) {
         await page.click(`[data-act=nav][data-v=${v}]`); await page.waitForTimeout(80);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

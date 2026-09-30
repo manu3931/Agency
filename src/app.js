@@ -181,7 +181,7 @@ const perLens = (it) => /RATE IS PER LENS/.test(it.notes || '');
 
 /* ================= state ================= */
 const state = {
-  view: homePref(), tour: 0, bookingId: null, tab: 'plan', draft: null, dirty: false, confirmDelete: false,
+  view: homePref(), tour: 0, touring: false, bookingId: null, tab: 'plan', draft: null, dirty: false, confirmDelete: false,
   bookings: [], dbState: 'wait', readOnly: false,
   settings: Object.assign({}, DEFAULTS), catalogDoc: null, cat: buildCatalog(SNAPSHOT),
   fundPlan: { order: [], bought: {}, extra: [] },
@@ -426,11 +426,17 @@ function openBooking(id, fresh) {
 let pendingRender = false;
 function editing() { const a = document.activeElement; return a && main() && (main().contains(a) || ($('#drawerHost') && $('#drawerHost').contains(a))) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !['checkbox', 'radio'].includes(a.type); }
 function requestRender() { if (editing()) { pendingRender = true; return; } render(); }
+let lastScreen = '';
 function render() {
   pendingRender = false;
+  syncTour();
   renderChrome();
   const views = { welcome: vWelcome, today: vToday, calendar: vCalendar, bookings: vBookings, booking: vBooking, inventory: vInventory, packages: vPackages, fund: vFund, insurance: vInsurance, storefront: vStore, roadmap: vRoadmap, settings: vSettings };
-  main().innerHTML = (PREVIEW && state.view !== 'welcome' ? previewBar() : '') + (views[state.view] || vWelcome)();
+  const touringHere = state.touring && state.view !== 'welcome';
+  main().innerHTML = (PREVIEW && state.view !== 'welcome' ? previewBar() : '') + (touringHere ? tourBar() : '') + (views[state.view] || vWelcome)() + (touringHere ? tourDock() : '');
+  const screen = state.view + (state.view === 'booking' ? ':' + state.bookingId + ':' + state.tab : '');
+  if (screen !== lastScreen) { const v = $('.view', main()); if (v) v.classList.add('enter'); lastScreen = screen; }
+  centerTourChip();
   renderDrawer();
   resolveNames();
 }
@@ -470,6 +476,38 @@ function previewBar() {
 function previewNote(text) { return PREVIEW ? `<div class="note pvn">${icon('lock', 16)}<span>${text}</span></div>` : ''; }
 function hero(eyebrow, title, sub, actions) { return `<div class="hero"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`; }
 
+/* ---------- Tour ---------- */
+function onStop(n) { const st = TOUR[n]; return !!st && (st.job ? state.view === 'booking' && state.tab === st.job : state.view === st.view); }
+function syncTour() { if (!state.touring || onStop(state.tour)) return; const n = TOUR.findIndex((t, k) => onStop(k)); if (n >= 0) state.tour = n; }
+/* Three equal buttons in a fixed row, then the progress bar, so nothing shifts from stop to stop. */
+function tourControls(buttons, i) { return `<div class="tour-ctl">${buttons.join('')}</div><div class="bar" aria-hidden="true"><i style="width:${((i + 1) / TOUR.length * 100).toFixed(1)}%"></i></div>`; }
+function goStop(n) {
+  n = Math.max(0, Math.min(TOUR.length - 1, n));
+  if (TOUR[n].job && !exampleJob()) { const dir = n >= state.tour ? 1 : -1; while (TOUR[n] && TOUR[n].job) n += dir; if (!TOUR[n]) { state.touring = false; state.view = 'welcome'; render(); return; } }
+  const st = TOUR[n]; state.tour = n; state.touring = true; state.drawer = null;
+  if (st.job) { state.tab = st.job; openBooking(exampleJob().id); return; }
+  if (state.dirty) flushSave();
+  state.view = st.view; render(); window.scrollTo(0, 0);
+}
+function tourBar() {
+  const st = TOUR[state.tour];
+  return `<div class="pv"><div class="pvbar tourbar">${icon('play', 15)}<span><b>Tour, stop ${state.tour + 1} of ${TOUR.length}:</b> ${esc(st.title)}. Look around, then carry on from the bottom of the page.</span><a href="#" data-act="tourJump">Continue ↓</a></div></div>`;
+}
+function tourDock() {
+  const i = state.tour; const st = TOUR[i]; const here = onStop(i); const nx = TOUR[i + 1]; const last = i === TOUR.length - 1;
+  return `<div class="dock-wrap"><div class="card tour-dock" id="tourDock">
+    <div class="row between"><span class="eyebrow" style="margin:0">${icon('play', 14)} Tour · stop ${i + 1} of ${TOUR.length}</span><button class="btn ghost sm" data-act="tourEnd">End tour</button></div>
+    ${here ? `<div class="stack" style="gap:6px"><h2 class="t">${esc(st.title)}</h2><p class="muted" style="margin:0">${esc(st.lead)}</p></div>
+      <div class="nextup">${icon(nx ? 'arrow' : 'check', 16)}<span>${nx ? `Next up: <b>${esc(nx.title)}</b>. ${esc(nx.lead)}` : "That's every stop. Finish, and the desk opens on Today."}</span></div>`
+      : `<div class="stack" style="gap:6px"><h2 class="t">You stepped off the tour</h2><p class="muted" style="margin:0">It's waiting at stop ${i + 1}: <b>${esc(st.title)}</b>.</p></div>`}
+    ${tourControls([`<button class="btn" data-act="tourPrev">${icon('back', 14)} Back</button>`, '<button class="btn" data-act="tourStops">All stops</button>', `<button class="btn dark" data-act="tourNext">${here ? (last ? 'Finish' : 'Next') : 'Resume'} ${icon('arrow', 14)}</button>`], i)}
+  </div></div>`;
+}
+function centerTourChip() {
+  const list = $('.tour-list'); const cur = list && list.querySelector('[aria-current="step"]');
+  if (list && cur && list.scrollWidth > list.clientWidth) list.scrollLeft = cur.offsetLeft - (list.clientWidth - cur.offsetWidth) / 2;
+}
+
 /* ---------- Start ---------- */
 function exampleJob() { return state.bookings.find((b) => b.id === EXAMPLE_ID) || state.bookings.find((b) => HOLDS.has(b.status)) || null; }
 function vWelcome() {
@@ -479,19 +517,21 @@ function vWelcome() {
     <div class="card glow welcome"><div class="eyebrow">${icon('play', 14)} Start here</div>
       <h1>Your rental desk, <em class="s">start to finish</em>.</h1>
       <p class="muted" style="max-width:62ch;font-size:17px;margin:14px 0 0">Quote a job, get the gear covered, hand it over and bring it back, and put part of every job toward new gear. This page walks through each part. It takes about two minutes.</p>
-      <div class="actions" style="margin-top:22px"><button class="btn grad" data-act="tourGo" data-i="0" data-scroll="1">${icon('play', 16)} Take the tour</button>${ex ? `<button class="btn" data-act="tourJob" data-t="plan">Open the example job</button>` : ''}<button class="btn ghost" data-act="nav" data-v="today">Go to Today ${icon('arrow', 14)}</button></div></div>
+      <div class="actions" style="margin-top:22px"><button class="btn grad" data-act="tourStart">${icon('play', 16)} Take the tour</button>${ex ? `<button class="btn" data-act="tourJob" data-t="plan">Open the example job</button>` : ''}<button class="btn ghost" data-act="nav" data-v="today">Go to Today ${icon('arrow', 14)}</button></div></div>
     ${PREVIEW ? `<div class="card"><div class="hd"><h2 class="t">${icon('lock', 18)} About this preview</h2><span class="pill">Public copy</span></div><div class="bd grid2">
       <div><b>Hidden here</b><ul class="muted small" style="margin:8px 0 0;padding-left:18px;display:grid;gap:6px"><li>Owner names. They show as Owner M, Owner C and Owner S.</li><li>What each piece is worth, its market price range, and where each rate came from.</li><li>Internal notes and open questions about the gear.</li><li>The buying list and growth plan behind the gear fund.</li><li>The market research on the Roadmap.</li><li>The link to the Google Sheet, so syncing is off.</li></ul></div>
       <div><b>Works the same</b><p class="muted small" style="margin:8px 0 0">Everything else: jobs, quotes, the three budgets, tax, discounts, paperwork, check-out, the schedule, kits, the gear fund and the storefront. The difference is where it's kept: here, anything you create stays in this browser and nobody else sees it. The private version is shared between the three owners and has all of the hidden details.</p></div></div></div>` : ''}
     <div class="card"><div class="hd"><h2 class="t">How a job moves</h2><span class="muted small">Every job walks the same six steps</span></div><div class="bd flow">${flow.map((f, n) => `<div class="fs"><span class="k">${n + 1}</span><b>${f[0]}</b><span>${f[1]}</span></div>`).join('')}</div></div>
     <div class="card tour" id="tour"><nav class="tour-list" aria-label="Tour stops">${TOUR.map((t, n) => `<button data-act="tourGo" data-i="${n}" ${n === i ? 'aria-current="step"' : ''}><span class="n">${n + 1}</span>${esc(t.title)}</button>`).join('')}</nav>
-      <div class="tour-body"><div class="row" style="gap:14px"><span class="icon-tile t-Kit" style="width:54px;height:54px;border-radius:16px">${icon(st.icon, 24)}</span><div><div class="eyebrow" style="margin:0">Stop ${i + 1} of ${TOUR.length}</div><h2>${esc(st.title)}</h2></div></div>
-        <p style="margin:0;font-size:17px">${esc(st.lead)}</p>
-        <ol>${st.how.map((h) => `<li>${esc(h)}</li>`).join('')}</ol>
-        ${PREVIEW && st.view === 'fund' ? previewNote("In this preview the buying list starts empty. Add a few things to try it.") : ''}
-        ${PREVIEW && st.view === 'settings' ? previewNote('In this preview, changes to Settings are saved in this browser only, and the sheet sync is off.') : ''}
-        <div class="actions"><button class="btn dark" data-act="tourShow">${st.job ? 'Show me in the example job' : `Open ${esc(st.title)}`} ${icon('arrow', 14)}</button><span class="grow"></span><button class="btn ghost" data-act="tourGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>${icon('back', 14)} Back</button><button class="btn" data-act="tourGo" data-i="${i + 1}" ${i === TOUR.length - 1 ? 'disabled' : ''}>Next ${icon('arrow', 14)}</button></div>
-        <div class="bar" aria-hidden="true"><i style="width:${((i + 1) / TOUR.length * 100).toFixed(1)}%"></i></div></div></div>
+      <div class="tour-body">
+        <div class="tour-stage">${TOUR.map((t, n) => `<div class="stop ${n === i ? 'on' : ''}" ${n === i ? '' : 'aria-hidden="true"'}>
+          <div class="row" style="gap:14px"><span class="icon-tile t-Kit" style="width:54px;height:54px;border-radius:16px">${icon(t.icon, 24)}</span><div><div class="eyebrow" style="margin:0">Stop ${n + 1} of ${TOUR.length}</div><h2>${esc(t.title)}</h2></div></div>
+          <p style="margin:0;font-size:17px">${esc(t.lead)}</p>
+          <ol>${t.how.map((h) => `<li>${esc(h)}</li>`).join('')}</ol>
+          ${PREVIEW && t.view === 'fund' ? previewNote('In this preview the buying list starts empty. Add a few things to try it.') : ''}
+          ${PREVIEW && t.view === 'settings' ? previewNote('In this preview, changes to Settings are saved in this browser only, and the sheet sync is off.') : ''}</div>`).join('')}</div>
+        ${tourControls([`<button class="btn" data-act="tourGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>${icon('back', 14)} Back</button>`, '<button class="btn dark" data-act="tourShow">Open page</button>', `<button class="btn" data-act="tourGo" data-i="${i + 1}" ${i === TOUR.length - 1 ? 'disabled' : ''}>Next ${icon('arrow', 14)}</button>`], i)}
+      </div></div>
     <label class="check" style="justify-content:center"><input type="checkbox" id="home-today" data-home="1" ${homePref() === 'today' ? 'checked' : ''}><span>Start on Today next time. The tour stays one tap away under Start.</span></label>
   </section>`;
 }
@@ -1282,8 +1322,18 @@ const ACT = {
     state.fundPlan.extra = (state.fundPlan.extra || []).concat([{ key, name: n, cost: c, phase: 1 }]); state.fundAdd = { name: '', cost: '' }; state.fundShowAll = true; saveFundPlan(); render();
     const pos = fundQueue().filter((q) => !q.bought).findIndex((q) => q.key === key) + 1; toast(`${n} is number ${pos} on the list. Move it up if it should come sooner.`);
   },
-  tourGo(el) { state.tour = Math.max(0, Math.min(TOUR.length - 1, num(el.dataset.i))); render(); const t = $('#tour'); if (t && el.dataset.scroll) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
-  tourShow() { const st = TOUR[state.tour]; if (st.job) { ACT.tourJob({ dataset: { t: st.job } }); return; } state.view = st.view; state.drawer = null; render(); window.scrollTo(0, 0); },
+  tourGo(el) { state.tour = Math.max(0, Math.min(TOUR.length - 1, num(el.dataset.i))); render(); },
+  tourStart() { goStop(0); },
+  tourShow() { goStop(state.tour); },
+  tourNext() {
+    if (!onStop(state.tour)) { goStop(state.tour); return; }
+    if (state.tour >= TOUR.length - 1) { state.touring = false; state.view = 'today'; render(); window.scrollTo(0, 0); toast('That is the whole tour. It is on the Start page any time.'); return; }
+    goStop(state.tour + 1);
+  },
+  tourPrev() { if (state.tour === 0) { state.view = 'welcome'; render(); window.scrollTo(0, 0); return; } goStop(state.tour - 1); },
+  tourStops() { state.view = 'welcome'; render(); const t = $('#tour'); if (t) t.scrollIntoView({ block: 'start' }); },
+  tourEnd() { state.touring = false; render(); toast('Tour ended. Pick it up again from Start.'); },
+  tourJump() { const d = $('#tourDock'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
   tourJob(el) { const ex = exampleJob(); if (!ex) { toast('There are no jobs yet. Start one with New job.'); state.view = 'bookings'; render(); return; } state.tab = el.dataset.t || 'plan'; openBooking(ex.id); },
   fundAll() { state.fundShowAll = !state.fundShowAll; render(); },
   fundRemove(el) { state.fundPlan.extra = (state.fundPlan.extra || []).filter((x) => x.key !== el.dataset.k); saveFundPlan(); render(); },
