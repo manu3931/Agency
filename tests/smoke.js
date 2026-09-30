@@ -4,7 +4,7 @@
 
    "claude.ai" loads dist/artifact.html inside a mock of the claude.ai runtime, seeded with the
    worked example. "site" loads index.html as a plain website with the browser-only runtime.
-   Each run checks the example quote against the sheet's own Quote Builder, then sales tax on top,
+   Each run starts on the Start page and follows the tour into the example job, checks the quote against the sheet's own Quote Builder, then sales tax on top,
    walks every screen, sends a Friday-to-Monday storefront request and checks it gets the weekend
    special, adds to the gear fund's buying list, and fails on any page error.
    Screenshots land in tests/output/. */
@@ -37,6 +37,15 @@ const receipt = (page, label) => page.$$eval('#receipt dl > *', (els, label) => 
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: true });
 
 async function flows(page, name) {
+  check(/start to finish/.test((await page.textContent('main')) || ''), `${name}: opens on the Start page`);
+  await shot(page, `${name}-start`);
+  await page.click('.tour-list [data-act=tourGo][data-i="2"]');
+  await page.click('[data-act=tourShow]'); await page.waitForTimeout(120);
+  check(!!(await page.$('#qsum')), `${name}: the tour's "Show me" opens the example job`);
+  if (name === 'site') {
+    await page.click('[data-act=nav][data-v=inventory]'); await page.waitForTimeout(60);
+    check(!!(await page.$('.pvbar')) && !!(await page.$('.note.pvn')), `${name}: the public preview says what is hidden`);
+  }
   await page.click('[data-act=nav][data-v=bookings]');
   await page.click('.li[data-id=example-brand-spot]');
   await page.waitForSelector('#qsum');
@@ -91,11 +100,14 @@ async function flows(page, name) {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(url); await page.waitForTimeout(400);
     if (name === 'site-phone-dark') {
-      for (const v of ['today', 'bookings']) {
+      for (const v of ['welcome', 'today', 'inventory', 'storefront', 'bookings']) {
         await page.click(`[data-act=nav][data-v=${v}]`); await page.waitForTimeout(80);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         check(overflow <= 0, `${name}: ${v} has no sideways scroll at phone width (${overflow}px)`);
       }
+      const titleW = await page.$eval('.job-li .ttl', (e) => e.getBoundingClientRect().width);
+      check(titleW >= 200, `${name}: a job's title has room on a phone (${Math.round(titleW)}px wide)`);
+      await shot(page, `${name}-jobs`);
       await page.click('.li[data-id=example-brand-spot]'); await page.waitForTimeout(100);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       check(overflow <= 0, `${name}: a job has no sideways scroll at phone width (${overflow}px)`);

@@ -445,3 +445,53 @@ select { max-width: 100%; }
 .actions { min-width: 0; max-width: 100%; }
 .actions select { min-width: 0; flex: 1 1 150px; }
 @media (max-width: 1480px) { .nav .ic { display: none; } .nav button { padding: 8px 11px; } }
+
+/* ---------- Start page ---------- */
+.welcome { padding: clamp(24px, 5vw, 56px); }
+.welcome h1 { font-size: clamp(38px, 6vw, 72px); line-height: .95; font-weight: 700; max-width: 16ch; }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 10px; }
+.flow .fs { background: var(--surface-2); border-radius: var(--r-sm); padding: 12px 14px; display: grid; gap: 3px; align-content: start; }
+.flow .fs b { font-weight: 650; }
+.flow .fs span { color: var(--muted); font-size: 13px; }
+.flow .fs .k { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--grad); color: #fff; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.tour { display: grid; grid-template-columns: 250px minmax(0, 1fr); overflow: hidden; scroll-margin-top: 110px; }
+.tour-list { border-right: 1px solid var(--line); padding: 10px; display: grid; gap: 2px; align-content: start; background: var(--surface-2); }
+.tour-list button { text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 10px; display: flex; gap: 10px; align-items: center; cursor: pointer; color: var(--muted); font-weight: 500; font-size: 14px; }
+.tour-list button:hover { color: var(--ink); }
+.tour-list button[aria-current="step"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+.tour-list .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 700; background: var(--surface); flex: none; }
+.tour-list button[aria-current="step"] .n { background: var(--grad); color: #fff; }
+.tour-body { padding: clamp(20px, 4vw, 40px); display: grid; gap: 16px; align-content: start; min-width: 0; }
+.tour-body h2 { font-size: clamp(26px, 3.5vw, 38px); font-weight: 700; }
+.tour-body ol { margin: 0; padding-left: 22px; display: grid; gap: 10px; font-size: 15.5px; max-width: 64ch; }
+.tour-body ol li::marker { font: 700 15px var(--display); color: var(--accent); }
+
+/* ---------- public preview ---------- */
+.pv { max-width: 1280px; margin: 0 auto 18px; }
+.pvbar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 10px 16px; border-radius: 16px; background: var(--surface); border: 1px dashed var(--line-strong); font-size: 13.5px; color: var(--muted); }
+.pvbar b { color: var(--ink); }
+.pvbar span { flex: 1 1 260px; }
+.note.pvn { background: var(--surface-2); border: 1px dashed var(--line-strong); display: flex; gap: 10px; align-items: flex-start; color: var(--muted); }
+.note.pvn .ic { color: var(--ink); margin-top: 2px; }
+
+/* ---------- job rows ---------- */
+.job-li { flex-wrap: wrap; }
+.job-li .meta { display: flex; gap: 8px 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-left: auto; }
+.job-li .tot { min-width: 80px; text-align: right; font-size: 15px; }
+
+/* iOS Safari gives date and time fields a fixed intrinsic width that ignores width: 100% */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; min-height: 44px; }
+  input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+}
+@media (max-width: 760px) {
+  .tour { grid-template-columns: minmax(0, 1fr); }
+  .tour-list { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+  .tour-list button { white-space: nowrap; }
+}
+@media (max-width: 640px) {
+  .job-li .meta { flex-basis: 100%; justify-content: flex-start; padding-left: 48px; }
+  .job-li .tot { margin-left: auto; }
+  .q-item { grid-template-columns: auto minmax(0, 1fr); }
+  .q-item .ctl { grid-column: 1 / -1; justify-content: flex-start; padding-left: 44px; }
+}

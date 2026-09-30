@@ -56,6 +56,8 @@ const ICON = {
   truck: '<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  play: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/>',
   people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M21.5 20a6.5 6.5 0 0 0-4-6"/>',
 };
 const icon = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
@@ -120,8 +122,37 @@ const DEFAULTS = {
   governing: 'New York',
 };
 const VIEWS = [
-  ['today', 'Today', 'sun'], ['calendar', 'Schedule', 'calendar'], ['bookings', 'Jobs', 'clap'], ['inventory', 'Gear', 'light'], ['packages', 'Kits', 'box'],
+  ['welcome', 'Start', 'play'], ['today', 'Today', 'sun'], ['calendar', 'Schedule', 'calendar'], ['bookings', 'Jobs', 'clap'], ['inventory', 'Gear', 'light'], ['packages', 'Kits', 'box'],
   ['fund', 'Gear fund', 'fund'], ['insurance', 'Insurance', 'shield'], ['storefront', 'Storefront', 'store'], ['roadmap', 'Roadmap', 'flag'], ['settings', 'Settings', 'cog'],
+];
+
+/* The public GitHub copy ships a stripped rate card marked preview: true. Everything works, but
+   names, values, notes, research and the sheet link are left out, and the page says so where it shows. */
+const PREVIEW = !!SNAPSHOT.preview;
+const HOME_KEY = 'sgp.home';
+function homePref() { try { return localStorage.getItem(HOME_KEY) === 'today' ? 'today' : 'welcome'; } catch (_) { return 'welcome'; } }
+function setHomePref(v) { try { localStorage.setItem(HOME_KEY, v); } catch (_) { /* private window: stays on Start */ } }
+const EXAMPLE_ID = 'example-brand-spot';
+/* The tour on the Start page: one stop per page, in the order a job actually moves. */
+const TOUR = [
+  { view: 'today', icon: 'sun', title: 'Today', lead: 'Your morning check-in: the week ahead, and anything that would stop gear going out.',
+    how: ['Each day shows what goes out, what shoots and what comes back.', '"Needs you" lists what is holding a job up: an unsigned agreement, gear not covered yet, a late return or a double booking.', 'Tap anything to jump straight to it.'] },
+  { view: 'bookings', icon: 'clap', title: 'Jobs', lead: 'Every request, quote and booking in one list.', how: ['Press New job, or quote a ready-made kit from Kits.', 'Requests from the storefront land here too, marked New request.', 'Filter by stage: requests, quoted, confirmed, out and back.'] },
+  { job: 'plan', icon: 'calendar', title: 'Inside a job: Plan', lead: 'Who it is for, when it happens, how the gear gets there, and what goes out.',
+    how: ['Set the dates. Hold days and the weekend special work themselves out.', 'Add gear from the slide-out list, or drop in a whole kit, then add crew.', 'Mark each line Essential, Nice to have or Extra. That is what builds the three budgets.'] },
+  { job: 'price', icon: 'fund', title: 'Inside a job: Price', lead: 'Three budgets from one gear list, with tax and discounts worked out for you.',
+    how: ['Full kit, Trimmed or Essentials: pick the one the client went with.', 'Add a student, returning-client or referral discount.', 'Sales tax is added unless the client gives an ST-121. You also see what goes to the gear fund and to each owner.'] },
+  { job: 'paperwork', icon: 'shield', title: 'Inside a job: Paperwork', lead: 'The rental agreement writes itself from the quote.',
+    how: ['Choose how the gear is covered: an insurance certificate, a card hold or a damage waiver.', 'Mark the agreement sent, then signed. Copy it or download it.', 'Log the insurance certificate and the checks tick themselves off.'] },
+  { job: 'handoff', icon: 'truck', title: 'Inside a job: Handoff', lead: 'Check-out and check-in, piece by piece.',
+    how: ['Tick each piece as it goes out and as it comes back, with notes on its condition.', 'Gear is not released until it is covered and the agreement is signed.', 'A late return adds the late fee on its own.'] },
+  { view: 'calendar', icon: 'calendar', title: 'Schedule', lead: 'Three weeks of jobs on one timeline.', how: ['Solid bars are shoot days. Striped bars are days the gear is out but not shooting.', 'Faded bars are jobs that are not confirmed yet.', 'Tap a job to open it.'] },
+  { view: 'inventory', icon: 'light', title: 'Gear', lead: 'Everything the pool owns, with the day rate to quote.', how: ['Search, or filter by type and by owner.', 'Pick two dates to see what is free.', 'Tap any piece for its details, or to add it to a job.'] },
+  { view: 'packages', icon: 'box', title: 'Kits', lead: 'Ready-made packages that price themselves.', how: ['Each kit shows its price for a day, two, three and a week.', 'Quote a kit on its own, or with the person who runs it.', 'If a piece inside changes price, the kit follows.'] },
+  { view: 'fund', icon: 'fund', title: 'Gear fund', lead: 'A share of every job goes toward the next piece of gear.', how: ['Set the share once. Each job locks it in when it is confirmed.', 'The ring shows how close you are to the next buy.', 'Reorder the buying list, add to it, and mark things bought.'] },
+  { view: 'insurance', icon: 'shield', title: 'Insurance', lead: 'Both sides of cover in one place.', how: ['See how every upcoming job is covered.', 'Download the gear schedule your own insurer asks for.', 'Card holds and the damage waiver are set up in Settings.'] },
+  { view: 'storefront', icon: 'store', title: 'Storefront', lead: 'The page your clients see.', how: ['Clients pick dates, add kits or single pieces, and send a request.', 'Availability updates for the dates they choose.', 'Requests arrive in Jobs, ready to quote.'] },
+  { view: 'settings', icon: 'cog', title: 'Settings', lead: 'Your details, prices and terms.', how: ['Company details flow into every agreement.', 'Change fees, discounts, sales tax and the gear fund share.', 'Sync the rate card from the Google Sheet.'] },
 ];
 
 /* ================= catalog ================= */
@@ -150,7 +181,7 @@ const perLens = (it) => /RATE IS PER LENS/.test(it.notes || '');
 
 /* ================= state ================= */
 const state = {
-  view: 'today', bookingId: null, tab: 'plan', draft: null, dirty: false, confirmDelete: false,
+  view: homePref(), tour: 0, bookingId: null, tab: 'plan', draft: null, dirty: false, confirmDelete: false,
   bookings: [], dbState: 'wait', readOnly: false,
   settings: Object.assign({}, DEFAULTS), catalogDoc: null, cat: buildCatalog(SNAPSHOT),
   fundPlan: { order: [], bought: {}, extra: [] },
@@ -398,8 +429,8 @@ function requestRender() { if (editing()) { pendingRender = true; return; } rend
 function render() {
   pendingRender = false;
   renderChrome();
-  const views = { today: vToday, calendar: vCalendar, bookings: vBookings, booking: vBooking, inventory: vInventory, packages: vPackages, fund: vFund, insurance: vInsurance, storefront: vStore, roadmap: vRoadmap, settings: vSettings };
-  main().innerHTML = (views[state.view] || vToday)();
+  const views = { welcome: vWelcome, today: vToday, calendar: vCalendar, bookings: vBookings, booking: vBooking, inventory: vInventory, packages: vPackages, fund: vFund, insurance: vInsurance, storefront: vStore, roadmap: vRoadmap, settings: vSettings };
+  main().innerHTML = (PREVIEW && state.view !== 'welcome' ? previewBar() : '') + (views[state.view] || vWelcome)();
   renderDrawer();
   resolveNames();
 }
@@ -433,7 +464,37 @@ function dbGate(what) {
     : `<div class="empty"><b>${what[0].toUpperCase() + what.slice(1)} aren't available here</b><span>Jobs, check-outs and paperwork live in this page's shared database. Open the page signed in to claude.ai to use them. Gear, kits and the storefront still work.</span></div>`;
 }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 3800); }
+function previewBar() {
+  return `<div class="pv"><div class="pvbar">${icon('lock', 15)}<span><b>Public preview.</b> Names, values, internal notes, research and the sheet link are hidden. Anything you create stays in this browser.</span><a href="#" data-act="nav" data-v="welcome">What's hidden?</a></div></div>`;
+}
+function previewNote(text) { return PREVIEW ? `<div class="note pvn">${icon('lock', 16)}<span>${text}</span></div>` : ''; }
 function hero(eyebrow, title, sub, actions) { return `<div class="hero"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`; }
+
+/* ---------- Start ---------- */
+function exampleJob() { return state.bookings.find((b) => b.id === EXAMPLE_ID) || state.bookings.find((b) => HOLDS.has(b.status)) || null; }
+function vWelcome() {
+  const i = Math.max(0, Math.min(TOUR.length - 1, state.tour)); const st = TOUR[i]; const ex = exampleJob();
+  const flow = [['New request', 'From the storefront, or you start one'], ['Quoted', 'Gear, crew and three budgets'], ['Confirmed', 'Deposit in, paperwork on its way'], ['Out on a job', 'Covered, signed, checked out'], ['Back', 'Checked in, late fees if any'], ['Closed', 'Paid, and the fund gets its share']];
+  return `<section class="view">
+    <div class="card glow welcome"><div class="eyebrow">${icon('play', 14)} Start here</div>
+      <h1>Your rental desk, <em class="s">start to finish</em>.</h1>
+      <p class="muted" style="max-width:62ch;font-size:17px;margin:14px 0 0">Quote a job, get the gear covered, hand it over and bring it back, and put part of every job toward new gear. This page walks through each part. It takes about two minutes.</p>
+      <div class="actions" style="margin-top:22px"><button class="btn grad" data-act="tourGo" data-i="0" data-scroll="1">${icon('play', 16)} Take the tour</button>${ex ? `<button class="btn" data-act="tourJob" data-t="plan">Open the example job</button>` : ''}<button class="btn ghost" data-act="nav" data-v="today">Go to Today ${icon('arrow', 14)}</button></div></div>
+    ${PREVIEW ? `<div class="card"><div class="hd"><h2 class="t">${icon('lock', 18)} About this preview</h2><span class="pill">Public copy</span></div><div class="bd grid2">
+      <div><b>Hidden here</b><ul class="muted small" style="margin:8px 0 0;padding-left:18px;display:grid;gap:6px"><li>Owner names. They show as Owner M, Owner C and Owner S.</li><li>What each piece is worth, its market price range, and where each rate came from.</li><li>Internal notes and open questions about the gear.</li><li>The buying list and growth plan behind the gear fund.</li><li>The market research on the Roadmap.</li><li>The link to the Google Sheet, so syncing is off.</li></ul></div>
+      <div><b>Works the same</b><p class="muted small" style="margin:8px 0 0">Everything else: jobs, quotes, the three budgets, tax, discounts, paperwork, check-out, the schedule, kits, the gear fund and the storefront. The difference is where it's kept: here, anything you create stays in this browser and nobody else sees it. The private version is shared between the three owners and has all of the hidden details.</p></div></div></div>` : ''}
+    <div class="card"><div class="hd"><h2 class="t">How a job moves</h2><span class="muted small">Every job walks the same six steps</span></div><div class="bd flow">${flow.map((f, n) => `<div class="fs"><span class="k">${n + 1}</span><b>${f[0]}</b><span>${f[1]}</span></div>`).join('')}</div></div>
+    <div class="card tour" id="tour"><nav class="tour-list" aria-label="Tour stops">${TOUR.map((t, n) => `<button data-act="tourGo" data-i="${n}" ${n === i ? 'aria-current="step"' : ''}><span class="n">${n + 1}</span>${esc(t.title)}</button>`).join('')}</nav>
+      <div class="tour-body"><div class="row" style="gap:14px"><span class="icon-tile t-Kit" style="width:54px;height:54px;border-radius:16px">${icon(st.icon, 24)}</span><div><div class="eyebrow" style="margin:0">Stop ${i + 1} of ${TOUR.length}</div><h2>${esc(st.title)}</h2></div></div>
+        <p style="margin:0;font-size:17px">${esc(st.lead)}</p>
+        <ol>${st.how.map((h) => `<li>${esc(h)}</li>`).join('')}</ol>
+        ${PREVIEW && st.view === 'fund' ? previewNote("In this preview the buying list starts empty. Add a few things to try it.") : ''}
+        ${PREVIEW && st.view === 'settings' ? previewNote('In this preview, changes to Settings are saved in this browser only, and the sheet sync is off.') : ''}
+        <div class="actions"><button class="btn dark" data-act="tourShow">${st.job ? 'Show me in the example job' : `Open ${esc(st.title)}`} ${icon('arrow', 14)}</button><span class="grow"></span><button class="btn ghost" data-act="tourGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>${icon('back', 14)} Back</button><button class="btn" data-act="tourGo" data-i="${i + 1}" ${i === TOUR.length - 1 ? 'disabled' : ''}>Next ${icon('arrow', 14)}</button></div>
+        <div class="bar" aria-hidden="true"><i style="width:${((i + 1) / TOUR.length * 100).toFixed(1)}%"></i></div></div></div>
+    <label class="check" style="justify-content:center"><input type="checkbox" id="home-today" data-home="1" ${homePref() === 'today' ? 'checked' : ''}><span>Start on Today next time. The tour stays one tap away under Start.</span></label>
+  </section>`;
+}
 
 /* ---------- Today ---------- */
 function collectIssues() {
@@ -480,6 +541,15 @@ function fundCard(compact) {
     <div class="bd row" style="gap:18px;align-items:center"><div class="ring" style="--p:${p.toFixed(1)}"><div><b>${Math.round(p)}%</b><span>of the next buy</span></div></div>
       <div class="grow stack" style="gap:6px"><span class="muted small">Next up</span><b style="font:650 18px/1.25 var(--display)">${esc(f.next.name)}</b><span class="small">${money(f.balance)} saved of ${money(f.next.cost)}${f.pledged ? ` · ${money(f.pledged)} more on the way` : ''}</span>${compact ? '' : `<span class="small muted">${num(S.fundPct)}% of every job's gear rental goes here.</span>`}</div></div></div>`;
 }
+function emptyWeek() {
+  const t = todayStr();
+  const next = state.bookings.filter((b) => HOLDS.has(b.status) && b.pickup >= t).sort((a, b) => a.pickup.localeCompare(b.pickup));
+  if (!next.length) return `<div class="card glow"><div class="empty"><b>No jobs on the books yet</b><span>Start one with New job, quote a ready-made kit, or take the two-minute tour first.</span><div class="actions" style="justify-content:center"><button class="btn grad" data-act="newBooking">${icon('plus', 16)} New job</button><button class="btn" data-act="nav" data-v="packages">Browse kits</button><button class="btn ghost" data-act="nav" data-v="welcome">Take the tour</button></div></div></div>`;
+  const n = next[0];
+  return `<div class="card glow"><div class="bd row wrap between" style="gap:16px;padding:22px">
+    <div class="row" style="gap:14px">${tile('Kit')}<div><div class="eyebrow" style="margin:0 0 6px">Nothing goes out this week · next up</div><div style="font:650 20px/1.2 var(--display)">${esc(n.project || n.ref)}</div><div class="muted small">${esc(clientName(n) || 'No client yet')} · goes out ${esc(fmtLong(n.pickup))}${next.length > 1 ? ` · ${plural(next.length - 1, 'more job')} after that` : ''}</div></div></div>
+    <div class="actions"><button class="btn dark" data-act="openBooking" data-id="${n.id}">Open it</button><button class="btn ghost" data-act="nav" data-v="calendar">See the schedule</button></div></div></div>`;
+}
 function vToday() {
   const t = todayStr();
   const out = state.bookings.filter((b) => b.status === 'out');
@@ -495,12 +565,13 @@ function vToday() {
   const qs = [...DATA_CHECKS.map((d) => ({ tone: 'bad', t: d.title, d: d.text, id: d.id })), ...openQ.map((o) => ({ tone: o[1] === 'Model ambiguous' ? 'warn' : 'bad', t: o[3], d: o[5], id: o[2] }))];
   return `<section class="view">
     ${hero(esc(fmtLong(t)), title, sub, '<button class="btn" data-act="nav" data-v="calendar">' + icon('calendar', 16) + ' Schedule</button><button class="btn grad" data-act="newBooking">' + icon('plus', 16) + ' New job</button>')}
-    ${state.dbState !== 'ready' ? `<div class="card">${dbGate('jobs')}</div>` : `<div class="week">${days.map((d) => { const dt = parseYmd(d); const evs = map[d] || []; return `<div class="day ${d === t ? 'today' : ''}"><div class="d"><span>${dt.toLocaleDateString('en-US', { weekday: 'short' })}</span><b>${dt.getDate()}</b></div>${evs.map((e) => `<div class="ev ${e.kind} ${e.tent ? 'tent' : ''}" data-act="openBooking" data-id="${e.b.id}" tabindex="0"><b>${esc(e.b.project || e.b.ref)}</b><span>${esc(e.txt)}${e.tent ? ' · tentative' : ''}</span></div>`).join('')}${evs.length ? '' : '<span class="none">Free</span>'}</div>`; }).join('')}</div>`}
+    ${state.dbState !== 'ready' ? `<div class="card">${dbGate('jobs')}</div>` : !days.some((d) => (map[d] || []).length) ? emptyWeek() : `<div class="week">${days.map((d) => { const dt = parseYmd(d); const evs = map[d] || []; return `<div class="day ${d === t ? 'today' : ''}"><div class="d"><span>${dt.toLocaleDateString('en-US', { weekday: 'short' })}</span><b>${dt.getDate()}</b></div>${evs.map((e) => `<div class="ev ${e.kind} ${e.tent ? 'tent' : ''}" data-act="openBooking" data-id="${e.b.id}" tabindex="0"><b>${esc(e.b.project || e.b.ref)}</b><span>${esc(e.txt)}${e.tent ? ' · tentative' : ''}</span></div>`).join('')}${evs.length ? '' : '<span class="none">Free</span>'}</div>`; }).join('')}</div>`}
     <div class="grid2">
       <div class="card"><div class="hd"><h2 class="t">Needs you</h2><span class="muted small">${issues.length ? plural(issues.length, 'thing') : ''}</span></div>
         <div class="bd flush">${state.dbState !== 'ready' ? dbGate('jobs') : issues.length ? issues.slice(0, 10).map((i) => `<div class="issue ${i.tone}" data-act="openBooking" data-id="${i.b.id}" data-tab="${i.tab || ''}" tabindex="0"><span class="mk"></span><div class="grow"><div class="ttl">${esc(i.t)}</div><div class="sub">${esc(i.d)}</div></div>${pill(i.b.status)}</div>`).join('')
           : '<div class="empty"><b>All clear</b><span>Every upcoming job has its agreement, cover and gear lined up.</span></div>'}</div></div>
       <div class="stack">${fundCard()}
+        ${PREVIEW ? `<div class="card"><div class="hd"><h2 class="t">Still to confirm</h2></div><div class="bd">${previewNote('Open questions about the gear, such as models to check and prices to verify, are hidden in the public preview.')}</div></div>` : ''}
         ${qs.length ? `<div class="card"><div class="hd"><h2 class="t">Still to confirm</h2><button class="btn ghost sm" data-act="nav" data-v="roadmap">All ${OPEN.filter((o) => o[0] === 'Open').length + DATA_CHECKS.length} ${icon('arrow', 14)}</button></div><div class="bd flush">${qs.map((q) => `<div class="issue ${q.tone}" ${state.cat.byId[q.id] ? `data-act="item" data-id="${q.id}" tabindex="0"` : ''}><span class="mk"></span><div class="grow"><div class="ttl">${esc(q.t)}</div><div class="sub">${esc(q.d)}</div></div></div>`).join('')}</div></div>` : ''}</div>
     </div>
   </section>`;
@@ -538,8 +609,8 @@ function vBookings() {
     ${hero('Quotes, holds and jobs', 'Every <em class="s">job</em>', 'Each one carries its quote, gear list, agreement, cover and check-out sheet.', '<button class="btn grad" data-act="newBooking">' + icon('plus', 16) + ' New job</button>')}
     <div class="chips">${chip('active', 'Active')}${chip('request', 'Requests')}${chip('quoted', 'Quoted')}${chip('confirmed', 'Confirmed')}${chip('out', 'Out')}${chip('done', 'Back')}${chip('cancelled', 'Cancelled')}${chip('all', 'All')}</div>
     <div class="card">${state.dbState !== 'ready' ? dbGate('jobs') : list.length ? `<div class="bd flush">${list.map((b) => { const c = chosen(b); const ready = isReady(b);
-      return `<div class="li click" data-act="openBooking" data-id="${b.id}" tabindex="0">${tile('Kit', true)}<div class="grow"><div class="ttl">${esc(b.project || 'Untitled job')}${b.example ? ' <span class="pill warm">Example</span>' : ''}</div><div class="sub">${esc(clientName(b) || 'No client yet')} · ${esc(fmtDay(b.pickup))} to ${esc(fmtDay(b.returnDate))}${c.weekend ? ' · weekend special' : ''}</div></div>
-        <div class="row" style="gap:10px;flex-wrap:wrap;justify-content:flex-end">${pill(b.status)}${HOLDS.has(b.status) ? `<span class="pill ${ready ? 'good' : 'warn'}">${ready ? 'Paperwork done' : 'Paperwork open'}</span>` : ''}<b class="num" style="min-width:80px;text-align:right">${money(c.total)}</b></div></div>`; }).join('')}</div>`
+      return `<div class="li click job-li" data-act="openBooking" data-id="${b.id}" tabindex="0">${tile('Kit', true)}<div class="grow"><div class="ttl">${esc(b.project || 'Untitled job')}${b.example ? ' <span class="pill warm">Example</span>' : ''}</div><div class="sub">${esc(clientName(b) || 'No client yet')} · ${esc(fmtDay(b.pickup))} to ${esc(fmtDay(b.returnDate))}${c.weekend ? ' · weekend special' : ''}</div></div>
+        <div class="meta">${pill(b.status)}${HOLDS.has(b.status) ? `<span class="pill ${ready ? 'good' : 'warn'}">${ready ? 'Paperwork done' : 'Paperwork open'}</span>` : ''}<b class="num tot">${money(c.total)}</b></div></div>`; }).join('')}</div>`
       : `<div class="empty"><b>No jobs here</b><span>${f === 'active' ? 'Start one, or quote a kit from the Kits page.' : 'Try another filter.'}</span></div>`}</div>
   </section>`;
 }
@@ -677,7 +748,7 @@ function payouts(b, c) {
   const f = fundTotals();
   return `<div class="row" style="gap:14px"><span class="icon-tile t-Kit">${icon('fund', 21)}</span><div class="grow"><div class="mid">${money(c.fund)}</div><div class="muted small">${pctTxt(c.fundPct)} of ${money(c.gear)} gear rental, toward ${f.next ? esc(f.next.name) : 'the buying list'}</div></div></div>
     <div class="tbl"><table class="plain"><thead><tr><th>Owner</th><th class="n">Gets</th><th class="n">On the house</th></tr></thead><tbody>${OWN.map((o) => `<tr><td>${ownerTag(o)}</td><td class="n">${money(c.own[o].net)}</td><td class="n">${c.own[o].comped ? money(c.own[o].comped) : '—'}</td></tr>`).join('')}</tbody></table></div>
-    <span class="faint small">Each owner's gear rental, after any discount and the fund share. Crew is paid separately.</span>`;
+    <span class="faint small">Each owner's gear rental, after any discount and the fund share. Crew is paid separately.</span>${previewNote('Owner names are hidden in the public preview.')}`;
 }
 function refreshDerived() {
   const b = state.draft; if (!b || state.view !== 'booking') return;
@@ -790,6 +861,7 @@ function vInventory() {
       <div class="row between wrap"><div class="chips"><button class="chip" data-act="invOwn" data-v="all" aria-pressed="${f.own === 'all'}">All owners</button>${OWN.map((o) => `<button class="chip" data-act="invOwn" data-v="${o}" aria-pressed="${f.own === o}"><span class="dot ${o}"></span>${esc(OWNERS[o].name)}</button>`).join('')}${OPEN.length || DATA_CHECKS.length ? `<button class="chip" data-act="invFlag" aria-pressed="${f.flag}">Details to confirm</button>` : ''}</div>
         <div class="seg" role="group" aria-label="View"><button data-act="invView" data-v="grid" aria-pressed="${f.view !== 'list'}">Cards</button><button data-act="invView" data-v="list" aria-pressed="${f.view === 'list'}">List</button></div></div>
     </div></div>
+    ${previewNote('Owner names, what each piece is worth, its market price range and the notes behind each rate are hidden in the public preview. Day rates and quantities are real.')}
     <div id="invBody">${invBody(rows, groups)}</div>
   </section>`;
 }
@@ -846,7 +918,7 @@ function vFund() {
       ${f.queue.length ? shown.map((x) => { const isNext = nx && x.key === nx.key; if (!x.bought) n++; return `<div class="q-item ${isNext ? 'next' : ''} ${x.bought ? 'done' : ''}"><span class="q-no">${x.bought ? icon('check', 15) : n}</span>
         <div class="grow"><div class="ttl" style="font-weight:600">${esc(x.name)}</div><div class="sub muted small">${x.custom ? 'Added here' : `Phase ${x.phase} · ${esc(x.dept)}`}${x.why ? ' · ' + esc(x.why) : ''}${x.bought ? ` · bought for ${money(num(x.bought.price))} on ${esc(fmtDay(x.bought.date))}` : ''}</div></div>
         <div class="ctl"><b class="num">${money(x.cost)}</b>${x.bought ? `<button class="btn ghost sm" data-act="fundUnbuy" data-k="${esc(x.key)}">Undo</button>` : `<button class="btn icon" data-act="fundUp" data-k="${esc(x.key)}" aria-label="Move up">${icon('up', 15)}</button><input type="number" min="0" data-buyprice="${esc(x.key)}" value="${esc(state.buyPrice[x.key] != null ? state.buyPrice[x.key] : x.cost)}" aria-label="Price paid"><button class="btn sm" data-act="fundBuy" data-k="${esc(x.key)}">Bought</button>`}${x.custom && !x.bought ? `<button class="x" data-act="fundRemove" data-k="${esc(x.key)}" aria-label="Remove">×</button>` : ''}</div></div>`; }).join('')
-        : '<div class="empty"><b>The buying list is empty</b><span>It comes from the Missing Gear tab of the full rate card. You can also add things here.</span></div>'}
+        : PREVIEW ? `<div class="bd">${previewNote('The pool\u2019s buying list, its Missing Gear plan with prices, is hidden in the public preview. Add a few things below to see how the fund works.')}</div>` : '<div class="empty"><b>The buying list is empty</b><span>It comes from the Missing Gear tab of the full rate card. You can also add things here.</span></div>'}
       ${f.queue.length > shown.length || state.fundShowAll ? `<div class="bd" style="padding-top:8px;padding-bottom:8px"><button class="btn ghost sm" data-act="fundAll">${state.fundShowAll ? 'Show just what\u2019s next' : `Show all ${f.queue.length}${f.queue.length - open.length ? `, including ${f.queue.length - open.length} bought` : ''}`}</button></div>` : ''}
     </div><div class="bd" style="border-top:1px solid var(--line)"><div class="row wrap" style="gap:10px"><input type="text" id="fund-name" data-fund="name" value="${esc(state.fundAdd.name)}" placeholder="Add something to buy" style="flex:2;min-width:180px"><input type="number" min="0" id="fund-cost" data-fund="cost" value="${esc(state.fundAdd.cost)}" placeholder="Cost" style="flex:1;min-width:100px"><button class="btn dark" data-act="fundAdd">${icon('plus', 14)} Add</button></div></div></div>
     <div class="card"><div class="hd"><h2 class="t">Payouts</h2><span class="muted small">Confirmed jobs onward, after the fund's share</span></div><div class="bd flush">${state.dbState !== 'ready' ? dbGate('jobs') : earned.length ? `<div class="tbl"><table class="plain"><thead><tr><th>Job</th>${OWN.map((o) => `<th class="n">${esc(OWNERS[o].short)}</th>`).join('')}<th class="n">Gear fund</th></tr></thead><tbody>${earned.map((b) => { const c = chosen(b); return `<tr class="click" data-act="openBooking" data-id="${b.id}" tabindex="0"><td><b>${esc(b.project || b.ref)}</b><div class="muted small">${esc(fmtDay(b.pickup))} · ${STATUS[b.status].label}</div></td>${OWN.map((o) => `<td class="n">${money(c.own[o].net)}</td>`).join('')}<td class="n">${money(c.fund)}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="empty"><b>No confirmed jobs yet</b><span>Payouts appear once a job is confirmed.</span></div>'}</div></div>
@@ -869,7 +941,7 @@ function vInsurance() {
     </div>
     <div class="grid2">
       <div class="card"><div class="hd"><h2 class="t">Your gear schedule</h2><span class="muted small">${total ? money(total) + ' · ' : ''}${items.length} lines</span></div><div class="bd stack">
-        ${total ? `<div class="tbl"><table class="plain"><thead><tr><th>Owner</th><th class="n">Lines</th><th class="n">Value</th></tr></thead><tbody>${OWN.map((o) => { const mine = items.filter((i) => i.own === o); return `<tr><td>${ownerTag(o, true)}</td><td class="n">${mine.length}</td><td class="n">${money(sum(mine, (i) => (i.resale || 0) * i.qty))}</td></tr>`; }).join('')}<tr class="total"><td>Everything</td><td class="n">${items.length}</td><td class="n">${money(total)}</td></tr></tbody></table></div>` : '<div class="note">This copy of the rate card has no resale values. The full rate card fills in the schedule.</div>'}
+        ${total ? `<div class="tbl"><table class="plain"><thead><tr><th>Owner</th><th class="n">Lines</th><th class="n">Value</th></tr></thead><tbody>${OWN.map((o) => { const mine = items.filter((i) => i.own === o); return `<tr><td>${ownerTag(o, true)}</td><td class="n">${mine.length}</td><td class="n">${money(sum(mine, (i) => (i.resale || 0) * i.qty))}</td></tr>`; }).join('')}<tr class="total"><td>Everything</td><td class="n">${items.length}</td><td class="n">${money(total)}</td></tr></tbody></table></div>` : (PREVIEW ? previewNote('What each piece is worth is hidden in the public preview, so the schedule has no values here. The download lists every piece without them.') : '<div class="note">This copy of the rate card has no resale values. The full rate card fills in the schedule.</div>')}
         <span class="muted small">The download has an empty serial-number column. Insurers ask for serials on anything over about $500. Kit parts carry no value of their own so nothing is insured twice.</span></div></div>
       <div class="card"><div class="hd"><h2 class="t">Renters right now</h2></div><div class="bd flush">${state.dbState !== 'ready' ? dbGate('jobs') : active.length ? active.map((b) => { const p = protectionState(b); return `<div class="li click" data-act="openBooking" data-id="${b.id}" data-tab="paperwork" tabindex="0"><div class="grow"><div class="ttl">${esc(b.project || b.ref)}</div><div class="sub">Goes out ${esc(fmtDay(b.pickup))} · ${money(chosen(b).repl)} of gear · ${{ coi: 'certificate', hold: 'card hold', waiver: 'waiver' }[p.mode]}</div></div><span class="pill ${p.ok ? 'good' : 'warn'}">${p.ok ? 'Covered' : 'Not yet'}</span></div>`; }).join('') : '<div class="empty"><b>No active jobs</b></div>'}</div></div>
     </div>
@@ -937,7 +1009,7 @@ function vRoadmap() {
   const r = state.road; const open = OPEN.filter((o) => r.showClosed || o[0] === 'Open');
   const MISSING = SNAPSHOT.missing || [], GROWTH = SNAPSHOT.growth || [], SEQ = SNAPSHOT.sequence || [], MARKET = SNAPSHOT.market || [];
   if (!OPEN.length && !DATA_CHECKS.length && !MISSING.length && !GROWTH.length && !MARKET.length) {
-    return `<section class="view">${hero('Where this goes next', 'The <em class="s">roadmap</em>')}<div class="card"><div class="empty"><b>No roadmap in this copy</b><span>Open questions, market notes, the buying list and the growth plan come with the full rate card.</span></div></div></section>`;
+    return `<section class="view">${hero('Where this goes next', 'The <em class="s">roadmap</em>')}<div class="card"><div class="bd">${PREVIEW ? previewNote('The roadmap is hidden in the public preview: market research, open questions about the gear, the buying list and the three-phase growth plan. It is all in the private version.') : '<div class="empty"><b>No roadmap in this copy</b><span>Open questions, market notes, the buying list and the growth plan come with the full rate card.</span></div>'}</div></div></section>`;
   }
   const bought = (state.fundPlan && state.fundPlan.bought) || {};
   const miss = MISSING.filter((m) => m[5] === r.phase);
@@ -961,7 +1033,7 @@ function vSettings() {
   const fld = (k, label, type, hint, wide) => `<label class="field ${wide ? 'wide' : ''}"><span>${label}</span>${type === 'area' ? `<textarea id="s-${k}" data-s="${k}" rows="2">${esc(S[k])}</textarea>` : `<input type="${type || 'text'}" id="s-${k}" data-s="${k}" value="${esc(S[k])}">`}${hint ? `<small>${hint}</small>` : ''}</label>`;
   const tog = (k, label, hint) => `<label class="check wide"><input type="checkbox" id="s-${k}" data-s="${k}" ${S[k] ? 'checked' : ''}><span>${label}${hint ? `<br><small class="faint">${hint}</small>` : ''}</span></label>`;
   return `<section class="view">
-    ${hero('Shared by everyone who uses the desk', '<em class="s">Settings</em>', 'The details and terms that flow into every quote, agreement and storefront page.')}
+    ${hero(PREVIEW ? 'Saved in this browser only' : 'Shared by everyone who uses the desk', '<em class="s">Settings</em>', 'The details and terms that flow into every quote, agreement and storefront page.')}
     <div class="grid2">
       <div class="card"><div class="hd"><h2 class="t">Company</h2></div><div class="bd form">
         ${fld('company', 'Name clients see')}${fld('legalName', 'Legal entity', 'text', 'Goes on agreements and certificates. Leave blank until the entity exists.')}${fld('email', 'Bookings email', 'email')}${fld('phone', 'Phone', 'tel')}${fld('afterHoursPhone', 'After-hours phone', 'tel')}
@@ -981,7 +1053,7 @@ function vSettings() {
         ${fld('governing', 'Governing law (state)')}${fld('paymentTerms', 'Payment terms', 'area', '', true)}${fld('lateRule', 'Late returns', 'area', '', true)}${fld('cancelRule', 'Cancellations', 'area', '', true)}</div></div>
       <div class="card"><div class="hd"><h2 class="t">Rate card</h2><span class="muted small">${c.source === 'sheet' ? `Synced ${esc(fmtStamp(c.syncedAt))}` : `As of ${esc(fmtLong(c.asOf))}`}</span></div><div class="bd stack">
         <p style="margin:0" class="small">The Google Sheet stays the one place gear is typed in. Syncing reads it with your Google Sheets connection and shares the result with everyone.</p>
-        ${SNAPSHOT.sheetId ? `<div class="actions"><button class="btn dark" data-act="sync" ${state.syncing || state.dbState !== 'ready' || !state.mcpReady ? 'disabled' : ''}>${state.syncing ? 'Syncing…' : 'Sync from Google Sheet'}</button>${c.source === 'sheet' ? '<button class="btn" data-act="unsync">Use the built-in copy</button>' : ''}<a class="btn ghost" href="https://docs.google.com/spreadsheets/d/${esc(SNAPSHOT.sheetId)}/edit" target="_blank" rel="noopener">Open the sheet</a></div>` : '<span class="muted small">This copy of the rate card is not linked to a Google Sheet.</span>'}
+        ${SNAPSHOT.sheetId ? `<div class="actions"><button class="btn dark" data-act="sync" ${state.syncing || state.dbState !== 'ready' || !state.mcpReady ? 'disabled' : ''}>${state.syncing ? 'Syncing…' : 'Sync from Google Sheet'}</button>${c.source === 'sheet' ? '<button class="btn" data-act="unsync">Use the built-in copy</button>' : ''}<a class="btn ghost" href="https://docs.google.com/spreadsheets/d/${esc(SNAPSHOT.sheetId)}/edit" target="_blank" rel="noopener">Open the sheet</a></div>` : (PREVIEW ? previewNote('The link to the Google Sheet is hidden in the public preview, so syncing is off. The rate card here is a copy with names, values and notes removed.') : '<span class="muted small">This copy of the rate card is not linked to a Google Sheet.</span>')}
         ${state.syncMsg ? `<div class="note ${/^Synced/.test(state.syncMsg) ? 'good' : 'bad'}">${esc(state.syncMsg)}</div>` : ''}
         ${SNAPSHOT.sheetId && !state.mcpReady ? `<span class="faint small">${HOSTED ? 'Syncing needs the Google Sheets connector, which this view cannot reach.' : 'Syncing works in the claude.ai version of the desk.'}</span>` : ''}</div></div>
     </div>
@@ -1004,6 +1076,7 @@ function renderDrawer() {
     <h2>${esc(it.name)}</h2>
     ${it.rec != null ? `<div><span class="big">${money(it.rec)}</span><span class="muted"> /day${perLens(it) ? ' per lens' : ''}</span>${it.lo != null && it.hi != null ? `<div class="muted small" style="margin-top:6px">Market runs ${money(it.lo)} to ${money(it.hi)} a day. Quote from this rate and discount on purpose.</div>` : ''}</div>` : `<div class="note">${esc(it.basis || 'Included in the kit rate.')}</div>`}
     <dl class="kv"><dt>In the pool</dt><dd>${it.qty}</dd>${it.resale != null ? `<dt>Worth</dt><dd>${money(it.resale)}${it.qty > 1 ? ` each · ${money(it.resale * it.qty)}` : ''}</dd>` : ''}${it.payback != null ? `<dt>Pays for itself in</dt><dd>${plural(it.payback, 'rental day')}</dd>` : ''}${it.rent ? `<dt>How often it goes out</dt><dd>${esc(it.rent)}</dd>` : ''}${NOMINAL_WATTS[it.id] ? `<dt>Power</dt><dd>${NOMINAL_WATTS[it.id].toLocaleString('en-US')} W nominal</dd>` : ''}<dt>Next 60 days</dt><dd>${u.who.length ? u.who.map((w) => esc(w.b.project || w.b.ref)).join(', ') : 'Free'}</dd><dt>ID</dt><dd class="faint">${esc(it.id)}</dd></dl>
+    ${previewNote('Its value, market price range, notes and where the rate came from are hidden in the public preview.')}
     ${qs.map((q) => `<div class="note bad"><b>${esc(q.t)}</b><br>${esc(q.d)}</div>`).join('')}
     ${it.notes && !/^(RATE IS PER LENS\.|Transport, not billed\.)$/.test(it.notes) ? `<div><div class="eyebrow">Notes</div><p style="margin:0">${esc(it.notes)}</p></div>` : ''}
     ${it.basis && it.rec != null ? `<div><div class="eyebrow">Where the rate came from</div><p style="margin:0" class="muted">${esc(it.basis)}</p></div>` : ''}
@@ -1209,6 +1282,9 @@ const ACT = {
     state.fundPlan.extra = (state.fundPlan.extra || []).concat([{ key, name: n, cost: c, phase: 1 }]); state.fundAdd = { name: '', cost: '' }; state.fundShowAll = true; saveFundPlan(); render();
     const pos = fundQueue().filter((q) => !q.bought).findIndex((q) => q.key === key) + 1; toast(`${n} is number ${pos} on the list. Move it up if it should come sooner.`);
   },
+  tourGo(el) { state.tour = Math.max(0, Math.min(TOUR.length - 1, num(el.dataset.i))); render(); const t = $('#tour'); if (t && el.dataset.scroll) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  tourShow() { const st = TOUR[state.tour]; if (st.job) { ACT.tourJob({ dataset: { t: st.job } }); return; } state.view = st.view; state.drawer = null; render(); window.scrollTo(0, 0); },
+  tourJob(el) { const ex = exampleJob(); if (!ex) { toast('There are no jobs yet. Start one with New job.'); state.view = 'bookings'; render(); return; } state.tab = el.dataset.t || 'plan'; openBooking(ex.id); },
   fundAll() { state.fundShowAll = !state.fundShowAll; render(); },
   fundRemove(el) { state.fundPlan.extra = (state.fundPlan.extra || []).filter((x) => x.key !== el.dataset.k); saveFundPlan(); render(); },
   sync() { syncFromSheet(); },
@@ -1259,6 +1335,7 @@ function onField(e) {
   if (el.dataset.storecrew != null) { const c = state.store.cart.find((x) => x.key === el.dataset.storecrew); if (c) c.crew = el.checked; render(); return; }
   if (el.dataset.cartqty != null) { const c = state.store.cart[num(el.dataset.cartqty)]; if (c) c.qty = Math.max(1, num(el.value, 1)); requestRender(); return; }
   if (el.dataset.road != null) { state.road[el.dataset.road] = el.checked; render(); return; }
+  if (el.dataset.home != null) { setHomePref(el.checked ? 'today' : 'welcome'); toast(el.checked ? 'The desk will open on Today.' : 'The desk will open on Start.'); return; }
   if (el.dataset.fund != null) { state.fundAdd[el.dataset.fund] = el.value; return; }
   if (el.dataset.buyprice != null) { state.buyPrice[el.dataset.buyprice] = el.value; }
 }

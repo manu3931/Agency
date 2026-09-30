@@ -12,6 +12,9 @@ pool their gear and rent it out together. The desk handles:
 
 It also has a storefront preview of the client-facing catalog.
 
+It opens on a Start page with a short tour of every screen. The desk can also open straight
+on Today; each person sets that on the Start page.
+
 It runs two ways from the same code:
 
 | | On claude.ai | As a plain website (`index.html`) |
@@ -32,8 +35,8 @@ back to `src/local-runtime.js` everywhere else.
   rates and where they came from, confidence, notes, owner names, open questions, the
   buying list, the growth plan and the Google Sheet link.
 
-The app reads the same file shape either way. Views that need private fields show an
-empty state when they're missing. To refresh the public file after the private one changes:
+The app reads the same file shape either way. The public file carries `preview: true`, so
+each screen that would show a hidden detail says what is hidden and why. To refresh the public file after the private one changes:
 
 ```
 node tools/public-data.js path/to/data.private.js > src/data.js
