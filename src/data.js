@@ -139,5 +139,5 @@ const SNAPSHOT = {
     ["Gear is never inside labor","When someone works a role and brings their own kit, the kit is a separate line. That is the standing rule from crew-deal-memo-standard.md."],
     ["Non-union commercial reality","$250-750/day even non-union, because the footage earns money. Indie and student work runs $100-200/day flat."]
   ],
-  open: [], missing: [], growth: [], sequence: []
+  open: [], missing: [], growth: [], sequence: [], market: []
 };

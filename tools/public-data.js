@@ -6,8 +6,8 @@
    Keeps what a client could see anyway: item IDs, categories, names, quantities, kit groups,
    the day rate to quote, packages, crew roles and rates, and New York's labor rules.
    Drops everything internal: resale values, low and high market rates and where they came
-   from, confidence, notes, owner names, open questions, the buying list, the growth plan and
-   the Google Sheet ID. Owner codes (M, C, S) stay because they are already in every item ID. */
+   from, confidence, notes, owner names, open questions, the buying list, the growth plan, market
+   research and the Google Sheet ID. Owner codes (M, C, S) stay because they are already in every item ID. */
 const fs = require('fs');
 const vm = require('vm');
 
@@ -29,7 +29,7 @@ const pub = {
   packages: S.packages,
   labor: S.labor.map((l) => [l[0], l[1], null, l[3], null, '']),
   laborRules: S.laborRules,
-  open: [], missing: [], growth: [], sequence: [],
+  open: [], missing: [], growth: [], sequence: [], market: [],
 };
 
 const lines = (arr) => '[\n' + arr.map((x) => '    ' + JSON.stringify(x)).join(',\n') + '\n  ]';
@@ -46,7 +46,7 @@ const SNAPSHOT = {
   packages: ${lines(pub.packages)},
   labor: ${lines(pub.labor)},
   laborRules: ${lines(pub.laborRules)},
-  open: [], missing: [], growth: [], sequence: []
+  open: [], missing: [], growth: [], sequence: [], market: []
 };
 `;
 process.stdout.write(out);

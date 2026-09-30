@@ -83,24 +83,48 @@ npm test                         # builds, then runs tests/smoke.js
 
 The test opens the claude.ai build inside a mock of the claude.ai runtime, and the plain
 website as-is. It checks that the example quote totals **$10,323 / $8,685 / $6,338** across
-budget tiers A / B / C. It then adds a line and switches tier, walks every view, sends a
-storefront request, and checks the phone layout in dark mode. Screenshots go to
-`tests/output/`.
+the three budgets, before tax, the same as the sheet's Quote Builder, and $10,631 with sales tax.
+It then:
+
+- adds gear and switches budget
+- walks every screen
+- sends a Friday-to-Monday storefront request and checks it gets the weekend special
+- adds to the gear fund
+- checks the phone layout in dark mode
+
+Screenshots go to `tests/output/`.
 
 ## Money rules the code follows
 
-`calc()` in `src/app.js` is where these live.
+`calc()` in `src/app.js` is where these live. Every number below is a default you can change in
+Settings.
 
-- A quote is four separate lines, never one blended number: equipment, possession, crew,
-  expendables at cost.
-- Rates are per unit. Lens sets are priced per lens, so Qty is the number of lenses.
-- Possession is 50% of the billed equipment day rate for each day gear is held but not shot.
-- Tiers: C is core and never cut, B is mid, A is premium and cut first. Budget A includes
-  everything, B drops the A lines, C keeps only C.
-- Comped lines and favor mode bill $0 but stay on Schedule A at full replacement value,
-  and the comped amount is tracked per owner.
-- Multi-day pricing is chosen per booking: straight days, or the film week
+- **Separate lines:** a quote is itemized, never one blended number. It lists gear rental,
+  hold days, any discount, crew, expendables at cost, delivery, a damage waiver if chosen,
+  late fees, and New York sales tax.
+- **Per-unit rates:** lens sets are priced per lens, so Qty is the number of lenses.
+- **Hold days** (the sheet calls them possession days) are days the gear is out but not
+  shooting. They bill at 50% of the billed day rate.
+- **Budgets:** every line is Essential, Nice to have or Extra. The Full kit budget includes
+  everything, Trimmed drops the extras, and Essentials keeps only the essentials. The sheet
+  calls these tiers C, B and A.
+- **Multi-day pricing** is chosen per job: straight days, or the film week
   (1 / 1.85 / 2.5 / 3x, plus 2.5x per extra week).
+- **Weekend special:** out Friday (or Thursday from 3 pm) and back Monday by 10:30 am bills
+  as one day with no hold days, as most NYC houses do.
+- **Discounts:** student, returning-client, referral or custom. They apply to gear rental
+  only.
+- **Sales tax:** 8.875% on gear rental, hold days, expendables, delivery, the waiver and
+  late fees. It's waived when the client gives Form ST-121 because the gear is used to make
+  a film for sale. Crew labor isn't taxed.
+- **Covering the gear:** an insurance certificate by default. A card hold is allowed for gear
+  worth up to $10,000 and up to 3 billed days. A damage waiver (12%, liability capped at 10%
+  of replacement value) is off until your own policy backs it.
+- **Gear fund:** 15% of each job's gear rental, after discounts, goes to the buying list,
+  and owners are paid the rest. The percentage is locked into each job when it's confirmed.
+  Crew pay, tax and expendables are never touched.
+- **On the house:** comped lines and favor mode bill $0 but stay on the gear list at full
+  replacement value.
 
 ## Before real clients use it
 
