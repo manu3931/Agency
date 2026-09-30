@@ -16,6 +16,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(__dirname, 'output');
 const SHEET_SUBTOTALS = ['$10,323', '$8,685', '$6,338']; // the sheet's Quote Builder, before tax
 const TOTAL_A_WITH_TAX = '$10,631'; // + 8.875% on gear, hold days and expendables
+const TOUR_STOPS = 15;
 fs.mkdirSync(OUT, { recursive: true });
 
 const failures = [];
@@ -37,9 +38,9 @@ const receipt = (page, label) => page.$$eval('#receipt dl > *', (els, label) => 
 const ctlBoxes = (page) => page.$$eval('#tour .tour-ctl .btn', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y + window.scrollY), Math.round(r.width), Math.round(r.height)]; }));
 async function buttonsStayPut(page, name) {
   const boxes = [await ctlBoxes(page)];
-  for (let i = 0; i < 12; i++) { await page.click('#tour .tour-ctl [data-act=tourGo]:last-child'); await page.waitForTimeout(30); boxes.push(await ctlBoxes(page)); }
+  for (let i = 0; i < TOUR_STOPS - 1; i++) { await page.click('#tour .tour-ctl [data-act=tourGo]:last-child'); await page.waitForTimeout(30); boxes.push(await ctlBoxes(page)); }
   const moved = boxes.findIndex((b) => JSON.stringify(b) !== JSON.stringify(boxes[0]));
-  check(boxes[0].length === 3 && moved < 0, `${name}: Back, Open page and Next stay in the same place on all 13 tour stops${moved >= 0 ? ` (moved at stop ${moved + 1})` : ''}`);
+  check(boxes[0].length === 3 && moved < 0, `${name}: Back, Open page and Next stay in the same place on all ${TOUR_STOPS} tour stops${moved >= 0 ? ` (moved at stop ${moved + 1})` : ''}`);
   await page.click('#tour .tour-list [data-act=tourGo][data-i="0"]');
 }
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: true });
@@ -56,7 +57,7 @@ async function flows(page, name) {
     await page.click('#tourDock [data-act=tourNext]'); await page.waitForTimeout(60);
   }
   const landed = await page.$eval('#nav [aria-current=page]', (e) => e.textContent.trim());
-  check(stops === 13 && landed.startsWith('Today'), `${name}: Next at the bottom of each page walks all ${stops} stops, then ends the tour on ${landed}`);
+  check(stops === TOUR_STOPS && landed.startsWith('Today'), `${name}: Next at the bottom of each page walks all ${stops} stops, then ends the tour on ${landed}`);
 
   await page.click('[data-act=nav][data-v=welcome]');
   await page.click('.tour-list [data-act=tourGo][data-i="2"]');
@@ -91,7 +92,7 @@ async function flows(page, name) {
   check((await receipt(page, 'Subtotal')) === '$8,810', `${name}: adding the hazer to the trimmed budget gives $8,810 before tax`);
 
   for (const tab of ['paperwork', 'handoff']) { await page.click(`[data-act=tab][data-t=${tab}]`); await page.waitForTimeout(60); await shot(page, `${name}-job-${tab}`); }
-  for (const v of ['today', 'calendar', 'inventory', 'packages', 'fund', 'insurance', 'roadmap', 'settings', 'storefront']) {
+  for (const v of ['today', 'calendar', 'clients', 'inventory', 'packages', 'fund', 'money', 'insurance', 'roadmap', 'settings', 'storefront']) {
     await page.click(`[data-act=nav][data-v=${v}]`); await page.waitForTimeout(80); await shot(page, `${name}-${v}`);
   }
 

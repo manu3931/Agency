@@ -1,0 +1,110 @@
+# Tests every push. On main, publishes the site only once the tests pass, when Settings, Pages, Source is set
+# to "GitHub Actions". Until then Pages keeps publishing the branch as before and this only reports.
+# Once a week it also sends one request to the Supabase project, if src/config.js names one, so a free
+# project isn't paused for inactivity.
+name: Test and publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 13 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: The site, the client side and the live connector
+        run: npm test
+      - name: Who can see and do what in the database
+        run: tests/sql/run.sh
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGPASSWORD: postgres
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: The server functions
+        run: |
+          deno check --no-lock supabase/functions/*/index.ts
+          deno test --allow-env --no-lock tests/functions/
+      - name: Screenshots, if something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots
+          path: tests/output/*.png
+          retention-days: 7
+
+  publish:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Is Pages publishing from this workflow?
+        id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          t=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${{ github.repository }}/pages" | jq -r .build_type || echo unknown)
+          echo "build_type=$t" >> "$GITHUB_OUTPUT"
+          if [ "$t" != "workflow" ]; then echo "::notice::Pages still publishes the main branch directly, so failing tests don't hold anything back yet. Settings, Pages, Source: GitHub Actions turns that on."; fi
+      - uses: actions/checkout@v4
+        if: steps.mode.outputs.build_type == 'workflow'
+      - name: Just the site's own files
+        if: steps.mode.outputs.build_type == 'workflow'
+        run: |
+          mkdir _site
+          cp -r index.html manifest.webmanifest assets src _site/
+          if [ -f CNAME ]; then cp CNAME _site/; fi
+          find _site -name '*.private.*' -delete
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.mode.outputs.build_type == 'workflow'
+        with:
+          path: _site
+      - id: deploy
+        if: steps.mode.outputs.build_type == 'workflow'
+        uses: actions/deploy-pages@v4
+
+  keep-awake:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: One request to the database
+        run: |
+          url=$(sed -n "s/^ *supabaseUrl: *'\(.*\)',.*/\1/p" src/config.js)
+          key=$(sed -n "s/^ *supabaseKey: *'\(.*\)',.*/\1/p" src/config.js)
+          if [ -z "$url" ] || [ -z "$key" ]; then echo "No Supabase project in src/config.js yet."; exit 0; fi
+          curl -fsS -o /dev/null -w "%{http_code}\n" -H "apikey: $key" "$url/rest/v1/docs?select=path&limit=1"

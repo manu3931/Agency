@@ -1,0 +1,15 @@
+# Only the server functions' settings. Each function checks who is calling itself (the Stripe webhook checks
+# Stripe's signature, the calendar its token), so Supabase's own JWT check is off for all four.
+project_id = "shared-gear-pool"
+
+[functions.stripe-checkout]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.stripe-hold]
+verify_jwt = false
+
+[functions.calendar]
+verify_jwt = false

@@ -3,9 +3,9 @@
 
 The claude.ai viewer wraps the file in its own <html>/<head>/<body> skeleton and only
 allows scripts from a few CDNs, so everything is inlined: the title, the font links,
-the stylesheet, the page markup, the rate-card snapshot and the app. The standalone
-site's browser-only runtime and example booking are left out, because on claude.ai
-the viewer supplies the real shared database.
+the stylesheet, the page markup, the QR code maker, the rate-card snapshot and the app.
+The standalone site's config, its Supabase and browser-only runtimes and the example
+booking are left out, because on claude.ai the viewer supplies the shared database.
 
     python3 build.py                                  # with the public rate card in src/data.js
     python3 build.py --data path/to/data.private.js   # with the full, private rate card
@@ -33,7 +33,7 @@ def main():
     index = (ROOT / "index.html").read_text()
     title = re.search(r"<title>.*?</title>", index).group(0)
     src = lambda name: args.data.read_text() if name == "data.js" else (ROOT / "src" / name).read_text()
-    for name in ("data.js", "app.js"):
+    for name in ("vendor/qrcode.js", "data.js", "app.js"):
         if "</script" in src(name):
             raise SystemExit("%s contains </script, which would end the inline script early" % name)
     page = "\n".join([
@@ -41,6 +41,7 @@ def main():
         block(index, "head").rstrip(),
         "<style>\n" + src("app.css") + "</style>",
         block(index, "body").rstrip(),
+        "<script>\n" + src("vendor/qrcode.js") + "</script>",
         "<script>\n" + src("data.js") + "</script>",
         "<script>\n" + src("app.js") + "</script>",
         "",

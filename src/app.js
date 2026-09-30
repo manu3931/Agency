@@ -60,15 +60,38 @@ const ICON = {
   lock: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   play: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/>',
   people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M21.5 20a6.5 6.5 0 0 0-4-6"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  card: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
+  qr: '<rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1"/><rect x="14" y="3.5" width="6.5" height="6.5" rx="1"/><rect x="3.5" y="14" width="6.5" height="6.5" rx="1"/><path d="M14 14h3v3M20.5 14v.01M14 20.5h3M20.5 17.5v3h-3"/>',
+  doc: '<path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4M9 12h6M9 16h6"/>',
+  pen: '<path d="m4 20 1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  logout: '<path d="M15 4h4v16h-4M10 16l4-4-4-4M14 12H4"/>',
 };
 const icon = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
 const CAT_ICON = { Camera: 'camera', Lens: 'lens', Support: 'support', Media: 'media', Accessory: 'accessory', Sound: 'sound', Electric: 'light', Power: 'power', Grip: 'grip', Consumable: 'tape', Kit: 'box' };
 const tile = (cat, sm) => `<span class="icon-tile ${sm ? 'sm' : ''} t-${esc(cat)}">${icon(CAT_ICON[cat] || 'box', sm ? 17 : 21)}</span>`;
 
+/* ================= where the desk is running ================= */
+/* claude.ai: the private team copy, shared through the viewer's database. live: the public site with
+   Supabase set up in src/config.js, real accounts and payments. preview: the public site without it,
+   everything kept in the visitor's own browser, with a switch to look around as an owner or a client. */
+const HOSTED = !!(window.claude && typeof window.claude.use === 'function');
+const MODE = HOSTED ? 'claude' : window.SGP_LIVE ? 'live' : 'preview';
+const LOCAL = !HOSTED && window.SGP_LOCAL && window.SGP_LOCAL.db ? window.SGP_LOCAL : null;
+const BE = { mode: MODE, db: null, auth: null, files: null, rpc: null, fn: null, feedUrl: null, siteUrl: '' };
+/* Drawers beyond the item and pick lists register themselves here by kind. */
+const EXTRA_DRAWERS = {};
+const docKey = (id) => String(id).replace(/[^A-Za-z0-9_.@+-]/g, '_').slice(0, 120);
+
 /* ================= constants ================= */
 /* Owner names, internal notes and the sheet link come from the rate card file, not the code,
    so the public repo can ship a stripped rate card without touching the app. */
-const OWNERS = SNAPSHOT.owners || { M: { name: 'Owner M', short: 'M' }, C: { name: 'Owner C', short: 'C' }, S: { name: 'Owner S', short: 'S' } };
+let SNAP = SNAPSHOT;
+const ANON_OWNERS = { M: { name: 'Owner M', short: 'M' }, C: { name: 'Owner C', short: 'C' }, S: { name: 'Owner S', short: 'S' } };
+let OWNERS = SNAPSHOT.owners || ANON_OWNERS;
 const OWN = ['M', 'C', 'S'];
 const CAT_ORDER = ['Camera', 'Lens', 'Support', 'Media', 'Accessory', 'Sound', 'Electric', 'Power', 'Grip', 'Consumable'];
 const CAT_LABEL = { Camera: 'Cameras', Lens: 'Lenses', Support: 'Support', Media: 'Media', Accessory: 'Accessories', Sound: 'Sound', Electric: 'Lighting', Power: 'Power', Grip: 'Grip', Consumable: 'Expendables' };
@@ -118,18 +141,30 @@ const DEFAULTS = {
   holdMax: 10000, holdMaxDays: 3,
   waiverOn: false, waiverPct: 12, waiverCapPct: 10, waiverMax: 20000,
   paymentTerms: 'The deposit is due to confirm the booking. The balance is due on return.',
+  payVenmo: '', payZelle: '', payZelleName: '', payCard: MODE === 'preview', payNote: '', autoReturning: true, siteUrl: '',
   lateRule: 'Equipment returned after the agreed return time bills the full day rate for each day or part day it is late.',
   cancelRule: 'Cancel 72 hours or more before pickup: no charge. Within 72 hours: 50% of the equipment total. After pickup: 100%.',
   governing: 'New York',
 };
 const VIEWS = [
-  ['welcome', 'Start', 'play'], ['today', 'Today', 'sun'], ['calendar', 'Schedule', 'calendar'], ['bookings', 'Jobs', 'clap'], ['inventory', 'Gear', 'light'], ['packages', 'Kits', 'box'],
-  ['fund', 'Gear fund', 'fund'], ['insurance', 'Insurance', 'shield'], ['storefront', 'Storefront', 'store'], ['roadmap', 'Roadmap', 'flag'], ['settings', 'Settings', 'cog'],
+  ['welcome', 'Start', 'play'], ['today', 'Today', 'sun'], ['calendar', 'Schedule', 'calendar'], ['bookings', 'Jobs', 'clap'], ['clients', 'Clients', 'people'], ['inventory', 'Gear', 'light'], ['packages', 'Kits', 'box'],
+  ['fund', 'Gear fund', 'fund'], ['money', 'Money', 'chart'], ['insurance', 'Insurance', 'shield'], ['storefront', 'Storefront', 'store'], ['roadmap', 'Roadmap', 'flag'], ['settings', 'Settings', 'cog'],
 ];
+/* What each kind of visitor gets. The team sees the whole desk; clients and visitors see the storefront
+   and, once signed in, their own bookings. */
+const ROLE_VIEWS = {
+  client: [['storefront', 'Rent gear', 'store'], ['mine', 'My bookings', 'clap'], ['account', 'Account', 'user']],
+  guest: [['storefront', 'Rent gear', 'store']],
+};
+const navViews = () => (state.role === 'admin' ? VIEWS : ROLE_VIEWS[state.role] || ROLE_VIEWS.guest);
+const allowedView = (v, role) => { role = role || state.role; return role === 'admin' ? v !== 'mine' && v !== 'account' : v === 'storefront' || (role === 'client' && (v === 'mine' || v === 'account')); };
+const homeFor = (role) => (role === 'admin' ? homePref() : role === 'client' ? 'mine' : 'storefront');
 
 /* The public GitHub copy ships a stripped rate card marked preview: true. Everything works, but
    names, values, notes, research and the sheet link are left out, and the page says so where it shows. */
-const PREVIEW = !!SNAPSHOT.preview;
+/* The public copy ships a stripped rate card. In the preview the page says what is hidden; on the live site the
+   team loads the full rate card into the database (Settings), and visitors never see the difference. */
+let PREVIEW = !!SNAPSHOT.preview && MODE !== 'live';
 const HOME_KEY = 'sgp.home';
 function homePref() { try { return localStorage.getItem(HOME_KEY) === 'today' ? 'today' : 'welcome'; } catch (_) { return 'welcome'; } }
 function setHomePref(v) { try { localStorage.setItem(HOME_KEY, v); } catch (_) { /* private window: stays on Start */ } }
@@ -144,16 +179,18 @@ const TOUR = [
   { job: 'price', icon: 'fund', title: 'Inside a job: Price', lead: 'Three budgets from one gear list, with tax and discounts worked out for you.',
     how: ['Full kit, Trimmed or Essentials: pick the one the client went with.', 'Add a student, returning-client or referral discount.', 'Sales tax is added unless the client gives an ST-121. You also see what goes to the gear fund and to each owner.'] },
   { job: 'paperwork', icon: 'shield', title: 'Inside a job: Paperwork', lead: 'The rental agreement writes itself from the quote.',
-    how: ['Choose how the gear is covered: an insurance certificate, a card hold or a damage waiver.', 'Mark the agreement sent, then signed. Copy it or download it.', 'Log the insurance certificate and the checks tick themselves off.'] },
+    how: ['Choose how the gear is covered: an insurance certificate, a card hold or a damage waiver.', 'Send the agreement and the client reads and signs it on their phone. Or copy it and mark it signed yourself.', 'Certificates the client uploads, or keeps on file, tick the checks off.'] },
   { job: 'handoff', icon: 'truck', title: 'Inside a job: Handoff', lead: 'Check-out and check-in, piece by piece.',
-    how: ['Tick each piece as it goes out and as it comes back, with notes on its condition.', 'Gear is not released until it is covered and the agreement is signed.', 'A late return adds the late fee on its own.'] },
-  { view: 'calendar', icon: 'calendar', title: 'Schedule', lead: 'Three weeks of jobs on one timeline.', how: ['Solid bars are shoot days. Striped bars are days the gear is out but not shooting.', 'Faded bars are jobs that are not confirmed yet.', 'Tap a job to open it.'] },
-  { view: 'inventory', icon: 'light', title: 'Gear', lead: 'Everything the pool owns, with the day rate to quote.', how: ['Each type of gear is a section. Open one to see everything in it, or search across all of them.', 'Pick two dates to see what is free.', 'Tap any piece for its details, or to add it to a job.'] },
+    how: ['Scan each label as it goes out and comes back, or tick it by hand, with notes on its condition.', 'Gear is not released until it is covered and the agreement is signed.', 'Payments by card, Venmo and Zelle land here. A late return adds the late fee on its own.'] },
+  { view: 'clients', icon: 'people', title: 'Clients', lead: 'Everyone you rent to, with their paperwork on file.', how: ['Returning clients get their discount on their own.', 'Keep each client\u2019s insurance certificate and ST-121 with its expiry date, and use it on any job.', 'Tap a client for their jobs, documents and notes.'] },
+  { view: 'calendar', icon: 'calendar', title: 'Schedule', lead: 'Three weeks of jobs on one timeline.', how: ['Solid bars are shoot days. Striped bars are days the gear is out but not shooting.', 'Faded bars are jobs that are not confirmed yet.', 'Put pickups and returns on your own calendar, with a reminder the day before each return.'] },
+  { view: 'inventory', icon: 'light', title: 'Gear', lead: 'Everything the pool owns, with the day rate to quote.', how: ['Each type of gear is a section. Open one to see everything in it, or search across all of them.', 'Tap any piece to add photos, serial numbers and what you paid.', 'Print a sheet of QR labels for the whole pool, a section or one piece.'] },
   { view: 'packages', icon: 'box', title: 'Kits', lead: 'Ready-made packages that price themselves.', how: ['Open a kit to see every piece inside it and its price for a day, two, three and a week.', 'Quote a kit on its own, or with the person who runs it.', 'If a piece inside changes price, the kit follows.'] },
   { view: 'fund', icon: 'fund', title: 'Gear fund', lead: 'A share of every job goes toward the next piece of gear.', how: ['Set the share once. Each job locks it in when it is confirmed.', 'The ring shows how close you are to the next buy.', 'Reorder the buying list, add to it, and mark things bought.'] },
+  { view: 'money', icon: 'chart', title: 'Money', lead: 'What each piece earns, how often it goes out, and when it pays for itself.', how: ['The last twelve months at a glance, month by month.', 'Each piece shows what it earned against what it cost.', 'It points out what deserves a second one and what sits idle.'] },
   { view: 'insurance', icon: 'shield', title: 'Insurance', lead: 'Both sides of cover in one place.', how: ['See how every upcoming job is covered.', 'Download the gear schedule your own insurer asks for.', 'Card holds and the damage waiver are set up in Settings.'] },
-  { view: 'storefront', icon: 'store', title: 'Storefront', lead: 'The page your clients see.', how: ['Clients pick dates, add kits or single pieces, and send a request.', 'Availability updates for the dates they choose.', 'Requests arrive in Jobs, ready to quote.'] },
-  { view: 'settings', icon: 'cog', title: 'Settings', lead: 'Your details, prices and terms.', how: ['Company details flow into every agreement.', 'Change fees, discounts, sales tax and the gear fund share.', 'Sync the rate card from the Google Sheet.'] },
+  { view: 'storefront', icon: 'store', title: 'Storefront', lead: 'The page your clients see.', how: ['Clients pick dates, add kits or single pieces with photos, and send a request from their own account.', 'They read the quote, sign the agreement and pay under My bookings.', 'Requests arrive in Jobs, ready to quote.'] },
+  { view: 'settings', icon: 'cog', title: 'Settings', lead: 'Your details, prices and terms.', how: ['Company details flow into every agreement.', 'Change fees, discounts, sales tax, the gear fund share and how clients pay.', 'Who is on the team, the calendar link and the rate card sync.'] },
 ];
 
 /* ================= catalog ================= */
@@ -173,16 +210,20 @@ function buildCatalog(src) {
   return { items, byId, packages, pkgById: Object.fromEntries(packages.map((p) => [p.id, p])), labor, asOf: src.asOf, source: src.source || 'snapshot', syncedAt: src.syncedAt || null };
 }
 /* Checks the sheet does not make on itself, found while building the desk. */
-const DATA_CHECKS = SNAPSHOT.dataChecks || [];
-const OPEN = SNAPSHOT.open || [];
-const OPEN_BY_ITEM = {};
-OPEN.forEach((o) => { if (o[0] === 'Open' && /^[A-Z]-[A-Z]{3}-\d+$/.test(o[2])) (OPEN_BY_ITEM[o[2]] = OPEN_BY_ITEM[o[2]] || []).push(o); });
+let DATA_CHECKS = [], OPEN = [], OPEN_BY_ITEM = {};
+function applySnapshotMeta(src) {
+  SNAP = src; OWNERS = src.owners || ANON_OWNERS; DATA_CHECKS = src.dataChecks || []; OPEN = src.open || []; OPEN_BY_ITEM = {};
+  OPEN.forEach((o) => { if (o[0] === 'Open' && /^[A-Z]-[A-Z]{3}-\d+$/.test(o[2])) (OPEN_BY_ITEM[o[2]] = OPEN_BY_ITEM[o[2]] || []).push(o); });
+}
+applySnapshotMeta(SNAPSHOT);
 const hasQuestion = (id) => !!(OPEN_BY_ITEM[id] || DATA_CHECKS.some((d) => d.id === id));
 const perLens = (it) => /RATE IS PER LENS/.test(it.notes || '');
 
 /* ================= state ================= */
+function initialRole() { return MODE === 'claude' ? 'admin' : MODE === 'preview' && LOCAL && LOCAL.auth ? LOCAL.auth.role() : 'guest'; }
 const state = {
-  view: homePref(), tour: 0, touring: false, bookingId: null, tab: 'plan', draft: null, dirty: false, confirmDelete: false,
+  role: initialRole(), user: null, auth: { mode: 'in', email: '', password: '', name: '', msg: '', tone: '', busy: false, then: null },
+  view: homeFor(initialRole()), tour: 0, touring: false, bookingId: null, tab: 'plan', draft: null, dirty: false, confirmDelete: false,
   bookings: [], dbState: 'wait', readOnly: false,
   settings: Object.assign({}, DEFAULTS), catalogDoc: null, cat: buildCatalog(SNAPSHOT),
   fundPlan: { order: [], bought: {}, extra: [] },
@@ -194,8 +235,11 @@ const state = {
   road: { phase: 1, showClosed: false },
   drawer: null, pick: { q: '', cat: 'all' }, fundAdd: { name: '', cost: '' }, buyPrice: {}, crewRole: '',
   uid: null, canWrite: null, canDownload: false, mcpReady: false, syncing: false, syncMsg: '',
+  payments: [], photos: {}, gear: {}, clientRecs: {}, team: [], teamAdd: { email: '', name: '' }, privateDoc: null, catalogPublic: null, secrets: {}, holdsPublic: [],
+  portal: { id: null }, sign: { name: '', consent: false, drawn: false, busy: false, dataUrl: '' }, upload: {}, profile: null, afterAuth: null, confirmResend: false, pay: { method: '', amount: '', note: '', busy: false, sim: null },
+  money: { period: 365 }, payRec: { method: 'venmo', kind: 'deposit', amount: '', note: '' }, holdAmt: '', clientsQ: '', label: { scope: 'all', size: '5160', perUnit: true }, scan: null, pendingRoute: '', photoBusy: '', liveError: '',
 };
-let db = null, userNs = null, downloadsNs = null, mcpNs = null;
+let db = null, userNs = null, downloadsNs = null, mcpNs = null, assetsNs = null;
 const main = () => $('#main');
 
 /* ================= pricing ================= */
@@ -258,9 +302,12 @@ function includedLines(b) { return (b.lines || []).filter((ln) => inTier(ln.tier
 
 /* ================= availability ================= */
 function bookingEnd(b) { const t = todayStr(); return b.status === 'out' && b.returnDate && b.returnDate < t ? t : b.returnDate; }
+/* The team sees every job. Clients and visitors only see their own, so availability comes from
+   busy_holds instead: dates and gear with no names attached. */
+function holdsList() { return state.role === 'admin' || MODE === 'claude' ? state.bookings : state.holdsPublic; }
 function usage(itemId, from, to, exceptId) {
   let firm = 0, tent = 0; const who = [];
-  state.bookings.forEach((b) => {
+  holdsList().forEach((b) => {
     if (b.id === exceptId || !HOLDS.has(b.status) || !b.pickup || !b.returnDate) return;
     if (!(b.pickup <= to && from <= bookingEnd(b))) return;
     let q = 0; (b.lines || []).forEach((ln) => { if (ln.id === itemId && inTier(ln.tier || 'C', b.budget || 'A')) q += num(ln.qty); });
@@ -336,10 +383,119 @@ function pastJobs(b) {
   return state.bookings.filter((x) => x.id !== b.id && EARNED.has(x.status) && ((em && norm(x.client && x.client.email) === em) || (co && norm(x.client && x.client.company) === co))).length;
 }
 
+/* ================= payments ================= */
+const PAID = new Set(['paid', 'received', 'captured']);
+const round2 = (n) => Math.round(num(n) * 100) / 100;
+const BILLED = new Set(['quoted', 'confirmed', 'out', 'returned', 'closed']);
+function paymentsFor(b) { return state.payments.filter((p) => p.bookingId === b.id).sort((a, c) => String(a.at || '').localeCompare(String(c.at || ''))); }
+function paidOn(b) { return round2(sum(paymentsFor(b).filter((p) => PAID.has(p.status) && p.kind !== 'hold'), (p) => (p.kind === 'refund' ? -1 : 1) * num(p.amount))); }
+function pendingOn(b) { return round2(sum(paymentsFor(b).filter((p) => p.status === 'reported'), (p) => num(p.amount))); }
+/* What the client owes now: the deposit until it is in, then the balance. A deposit or a payment the team
+   marked by hand counts even when no payment was recorded against it. */
+function amountDue(b) {
+  const bill = b.bill || (state.role === 'admin' && BILLED.has(b.status) ? billOf(b) : null); if (!bill || !num(bill.total)) return { kind: 'none', amount: 0, total: 0, paid: 0, pending: 0 };
+  let paid = paidOn(b); const deposit = num(bill.deposit); const total = num(bill.total); const pending = pendingOn(b);
+  if (b.payment === 'paid') paid = Math.max(paid, total);
+  const depIn = (b.deposit && b.deposit.status === 'received') || paid + 0.5 >= deposit;
+  if (depIn) paid = Math.max(paid, deposit);
+  if (!depIn && ['quoted', 'confirmed'].includes(b.status)) return { kind: 'deposit', amount: round2(deposit - paid), total, paid, pending };
+  return { kind: 'balance', amount: Math.max(0, round2(total - paid)), total, paid, pending };
+}
+const PAY_METHOD = { card: 'card', venmo: 'Venmo', zelle: 'Zelle', cash: 'cash', check: 'check', other: 'other' };
+const PAY_METHOD_LABEL = { card: 'Card', venmo: 'Venmo', zelle: 'Zelle', cash: 'Cash', check: 'Check', other: 'Other' };
+const PAY_STATUS = { reported: ['Sent, not confirmed yet', 'warn'], received: ['Received', 'good'], paid: ['Paid', 'good'], authorized: ['Hold placed', 'info'], captured: ['Charged from the hold', 'good'], released: ['Hold released', ''], void: ['Not received', 'bad'] };
+const PAY_KIND = { deposit: 'Deposit', balance: 'Balance', hold: 'Card hold', refund: 'Refund' };
+function payOptions() { const S = state.settings; return { card: !!S.payCard && (MODE === 'live' || MODE === 'preview'), venmo: !!String(S.payVenmo || '').trim(), zelle: !!String(S.payZelle || '').trim() }; }
+function payRow(p, admin) {
+  const st = PAY_STATUS[p.status] || [p.status, ''];
+  const acts = !admin || state.readOnly ? '' : p.status === 'reported' ? `<button class="btn sm dark" data-act="payConfirm" data-p="${esc(p.id)}">It arrived</button><button class="btn ghost sm" data-act="payReject" data-p="${esc(p.id)}">Not received</button>`
+    : p.status === 'authorized' && p.kind === 'hold' ? `<button class="btn sm" data-act="holdAct" data-p="${esc(p.id)}" data-a="release">Release</button><label class="mini">Charge<input type="number" min="1" step="0.01" data-ext="holdamt" value="${esc(state.holdAmt)}" placeholder="0"></label><button class="btn ghost sm" data-act="holdAct" data-p="${esc(p.id)}" data-a="capture">Charge it</button>` : '';
+  return `<div class="pay-row"><span class="pm">${icon(p.method === 'card' ? 'card' : 'fund', 15)}</span><div class="grow"><b>${money(num(p.amount))}</b> <span class="muted small">${esc(PAY_KIND[p.kind] || p.kind)} · ${esc(PAY_METHOD[p.method] || p.method)} · ${esc(fmtStamp(p.at))}</span>${p.note ? `<div class="faint small">${esc(p.note)}</div>` : ''}</div><span class="pill ${st[1]}">${esc(st[0])}</span>${acts ? `<div class="actions pay-acts">${acts}</div>` : ''}</div>`;
+}
+function reportForm(b, method, amt) {
+  return `<details class="report"><summary class="small">I've sent it</summary><div class="row wrap" style="margin-top:8px;gap:8px"><label class="mini">Amount<input type="number" min="1" step="0.01" data-ext="pay" data-k="amount" data-for="${esc(b.id)}" value="${esc(amt)}"></label><input type="text" data-ext="pay" data-k="note" value="${esc(state.pay.note)}" placeholder="Sent from which account? (optional)" aria-label="Note" style="flex:1;min-width:160px"><button class="btn sm dark" data-act="payReport" data-id="${esc(b.id)}" data-m="${method}" ${state.pay.busy ? 'disabled' : ''}>Let us know</button></div></details>`;
+}
+function portalPay(b) {
+  const S = state.settings; const bill = b.bill; const due = amountDue(b); const opts = payOptions(); const pays = paymentsFor(b);
+  const badge = !bill ? '' : due.amount <= 0.5 ? '<span class="pill good">Paid in full</span>' : `<span class="pill ${due.kind === 'deposit' ? 'warn' : ''}">${money(due.amount)} ${due.kind === 'deposit' ? 'deposit due' : 'to pay'}</span>`;
+  const head = `<div class="card" id="p-pay"><div class="hd"><h2 class="t">Payments</h2>${badge}</div><div class="bd stack">`;
+  if (!bill || b.status === 'request') return head + '<span class="muted small">Payment comes after the quote.</span></div></div>';
+  if (b.status === 'cancelled') return head + '<span class="muted small">This booking was cancelled.</span></div></div>';
+  const toPay = Math.max(0, round2(due.amount - due.pending));
+  const methods = Object.keys(opts).filter((k) => opts[k]);
+  const m = methods.includes(state.pay.method) ? state.pay.method : methods[0];
+  const amt = state.pay.amount !== '' && state.pay.for === b.id ? state.pay.amount : toPay.toFixed(2);
+  let tabs = '', how = '';
+  if (toPay > 0.5 && methods.length) {
+    if (methods.length > 1) tabs = `<div class="seg" role="group" aria-label="How to pay">${methods.map((k) => `<button data-act="payMethod" data-m="${k}" aria-pressed="${k === m}">${PAY_METHOD_LABEL[k]}</button>`).join('')}</div>`;
+    if (m === 'card') how = `<button class="btn grad" data-act="payCard" data-id="${esc(b.id)}" data-kind="${due.kind}" ${state.pay.busy ? 'disabled' : ''}>${icon('card', 16)} ${state.pay.busy ? 'Opening checkout…' : `Pay ${money(toPay)} by card`}</button><span class="faint small">Secure checkout by Stripe.${MODE === 'preview' ? ' Simulated in the preview: no money moves.' : ''}</span>`;
+    else if (m === 'venmo') { const h = String(S.payVenmo).replace(/^@/, '').trim(); const url = `https://venmo.com/${encodeURIComponent(h)}?txn=pay&amount=${toPay.toFixed(2)}&note=${encodeURIComponent(b.ref)}`; how = `<a class="btn dark" href="${esc(url)}" target="_blank" rel="noopener">Open Venmo · @${esc(h)}</a><span class="small muted">Send ${money(toPay)} to <b>@${esc(h)}</b> with <b>${esc(b.ref)}</b> in the note.</span>${reportForm(b, 'venmo', amt)}`; }
+    else if (m === 'zelle') how = `<div class="stack" style="gap:6px"><span class="small">Send <b>${money(toPay)}</b> with Zelle to</span><div class="copyrow"><b>${esc(S.payZelle)}</b><button class="btn ghost sm" data-act="copyText" data-t="${esc(S.payZelle)}">Copy</button></div>${S.payZelleName ? `<span class="small muted">It shows up as ${esc(S.payZelleName)}.</span>` : ''}<div class="copyrow small">Memo <b>${esc(b.ref)}</b><button class="btn ghost sm" data-act="copyText" data-t="${esc(b.ref)}">Copy</button></div></div>${reportForm(b, 'zelle', amt)}`;
+  } else if (toPay > 0.5) how = `<span class="small muted">${S.email ? `Email <a href="mailto:${esc(S.email)}?subject=${encodeURIComponent(b.ref)}">${esc(S.email)}</a> to arrange payment.` : 'We will be in touch about payment.'}</span>`;
+  const hold = b.protection === 'hold' && !(b.hold && b.hold.placed) && ['quoted', 'confirmed'].includes(b.status);
+  const holdHtml = hold ? `<div class="note info">${icon('card', 15)} <b>Card hold</b>: ${money(num(bill.repl))} held on your card while the gear is out, then released. Holds last about a week, so place it in the days before pickup.${opts.card ? `<div class="actions" style="margin-top:8px"><button class="btn dark sm" data-act="payCard" data-id="${esc(b.id)}" data-kind="hold">Place the hold</button></div>` : ' We place it at pickup.'}</div>` : '';
+  return head + `<dl class="kv"><dt>Total</dt><dd>${money(due.total)}</dd><dt>Paid</dt><dd>${money(due.paid)}</dd>${due.pending ? `<dt>Sent, waiting for us to confirm</dt><dd>${money(due.pending)}</dd>` : ''}<dt class="tot"><b>${due.kind === 'deposit' ? `Deposit due now · ${num(bill.depositPct)}%` : 'Left to pay'}</b></dt><dd class="tot"><b>${money(toPay)}</b></dd></dl>
+    ${due.kind === 'deposit' ? '<span class="faint small">The deposit confirms the booking. The rest is due when the gear comes back.</span>' : ''}
+    ${tabs}${how}${holdHtml}${S.payNote ? `<span class="faint small">${esc(S.payNote)}</span>` : ''}
+    ${pays.length ? `<div class="pay-list">${pays.map((x) => payRow(x, false)).join('')}</div>` : ''}</div></div>`;
+}
+function adminPayCard(b) {
+  const due = amountDue(b); const pays = paymentsFor(b); const r = state.payRec; const bill = b.bill || (BILLED.has(b.status) ? billOf(b) : null);
+  const badge = !bill ? '' : due.amount <= 0.5 ? '<span class="pill good">Paid in full</span>' : `<span class="pill ${due.kind === 'deposit' ? 'warn' : ''}">${money(due.amount)} ${due.kind} due</span>`;
+  return `<div class="card"><div class="hd"><h2 class="t">Payments</h2>${badge}</div><div class="bd stack">
+    ${bill ? `<dl class="kv"><dt>Quoted total</dt><dd>${money(num(bill.total))}</dd><dt>Deposit · ${num(bill.depositPct)}%</dt><dd>${money(num(bill.deposit))}</dd><dt>Paid so far</dt><dd>${money(due.paid)}</dd>${due.pending ? `<dt>Sent by the client, to confirm</dt><dd>${money(due.pending)}</dd>` : ''}</dl>` : '<span class="muted small">Quote the job to set what is owed.</span>'}
+    ${pays.length ? `<div class="pay-list">${pays.map((x) => payRow(x, true)).join('')}</div>` : ''}
+    ${state.readOnly ? '' : `<details ${pays.length ? '' : 'open'}><summary class="small" style="cursor:pointer;font-weight:600">Record a payment</summary><div class="form" style="grid-template-columns:1fr 1fr;margin-top:10px">
+      <label class="field"><span>How</span><select data-ext="payrec" data-k="method">${['venmo', 'zelle', 'cash', 'check', 'card', 'other'].map((k) => `<option value="${k}" ${r.method === k ? 'selected' : ''}>${PAY_METHOD_LABEL[k]}</option>`).join('')}</select></label>
+      <label class="field"><span>For</span><select data-ext="payrec" data-k="kind">${[['deposit', 'Deposit'], ['balance', 'Balance'], ['refund', 'Refund to the client']].map(([k, l]) => `<option value="${k}" ${r.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="field"><span>Amount</span><input type="number" min="0" step="0.01" data-ext="payrec" data-k="amount" value="${esc(r.amount !== '' ? r.amount : Math.max(0, due.amount).toFixed(2))}"></label>
+      <label class="field"><span>Note</span><input type="text" data-ext="payrec" data-k="note" value="${esc(r.note)}"></label>
+      <button class="btn dark wide" data-act="payRecord">Record it</button></div></details>`}
+  </div></div>`;
+}
+/* Keep the job's own deposit and paid flags in step with its payments, so Today, the fund and the client all agree. */
+function syncPayFlags(b, list) {
+  const bill = b.bill || billOf(b); const paid = round2(sum(list.filter((p) => PAID.has(p.status) && p.kind !== 'hold'), (p) => (p.kind === 'refund' ? -1 : 1) * num(p.amount)));
+  const dep = paid + 0.5 >= num(bill.deposit) && paid > 0;
+  b.deposit = Object.assign({}, b.deposit, { status: dep || (b.deposit && b.deposit.status === 'received' && paid > 0) ? 'received' : 'none' });
+  b.payment = num(bill.total) && paid + 0.5 >= num(bill.total) ? 'paid' : 'unpaid';
+  const hold = list.find((p) => p.kind === 'hold' && p.status === 'authorized');
+  b.hold = Object.assign({}, b.hold, { placed: !!hold || (b.hold && b.hold.placed && !list.some((p) => p.kind === 'hold')) || false });
+}
+async function writePayment(pay) {
+  if (!db) return false;
+  try { await db.collection('payments').doc(pay.id).set(pay); } catch (e) { writeError(e); return false; }
+  const b = state.draft && state.draft.id === pay.bookingId ? state.draft : null;
+  if (b) { const list = paymentsFor(b).filter((x) => x.id !== pay.id).concat([pay]); syncPayFlags(b, list); scheduleSave(0); }
+  return true;
+}
+function billOf(b) {
+  const c = chosen(b); const S = state.settings;
+  return { total: round2(c.total), subtotal: round2(c.subtotal), tax: round2(c.tax), gear: round2(c.gear), crew: round2(c.crew), deposit: round2(c.total * num(S.depositPct) / 100), depositPct: num(S.depositPct), repl: round2(c.repl), budget: b.budget || 'A', rows: receiptRows(b, c).filter((r) => !r.x), at: new Date().toISOString() };
+}
+/* Quotes carry a copy of the bill, so a client (who can't see values or recompute them) reads exactly what the team quoted. */
+function stampBill(b) {
+  if (!BILLED.has(b.status)) return;
+  const nb = billOf(b); const same = (x) => stable(Object.assign({}, x, { at: 0 }));
+  if (!b.bill || same(b.bill) !== same(nb)) b.bill = nb;
+}
+function clientTodo(b) {
+  if (!b || state.role !== 'client') return [];
+  const out = []; const ct = b.contract || {};
+  if (['quoted', 'confirmed'].includes(b.status)) {
+    if (ct.status === 'sent') out.push({ k: 'sign', t: 'Sign the rental agreement' });
+    if ((b.protection || 'coi') === 'coi' && !['received', 'verified'].includes((b.coi || {}).status)) out.push({ k: 'coi', t: 'Send your insurance certificate' });
+    if (b.protection === 'hold' && !(b.hold && b.hold.placed)) out.push({ k: 'pay', t: 'Place the card hold' });
+    if (b.tax && b.tax.exempt && !b.tax.cert && !b.tax.certFile) out.push({ k: 'tax', t: 'Send your ST-121' });
+  }
+  if (BILLED.has(b.status) && b.status !== 'closed') { const due = amountDue(b); if (due.amount - due.pending > 0.5 && (due.kind === 'deposit' || ['out', 'returned'].includes(b.status))) out.push({ k: 'pay', t: `Pay the ${money(due.amount - due.pending)} ${due.kind}` }); }
+  return out;
+}
+
 /* ================= gear fund ================= */
 function fundQueue() {
   const plan = state.fundPlan || {}; const bought = plan.bought || {};
-  const base = (SNAPSHOT.missing || []).map((m, i) => ({ key: slug(m[1]), name: m[1], cost: num(m[4]), phase: m[5], dept: m[0], why: m[6], i, cut: !(m[2] > 0) || m[11] === 'Cut' })).filter((x) => !x.cut);
+  const base = (SNAP.missing || []).map((m, i) => ({ key: slug(m[1]), name: m[1], cost: num(m[4]), phase: m[5], dept: m[0], why: m[6], i, cut: !(m[2] > 0) || m[11] === 'Cut' })).filter((x) => !x.cut);
   const extra = (plan.extra || []).map((x, i) => ({ key: x.key, name: x.name, cost: num(x.cost), phase: num(x.phase, 1), dept: 'Added here', why: '', i: 1000 + i, custom: true }));
   const order = plan.order || []; const rank = (k) => { const i = order.indexOf(k); return i < 0 ? 1e9 : i; };
   return [...base, ...extra].sort((a, b) => rank(a.key) - rank(b.key) || a.phase - b.phase || a.i - b.i).map((x) => Object.assign(x, { bought: bought[x.key] || null }));
@@ -373,6 +529,14 @@ function newBooking(p) {
     checkout: { out: {}, back: {}, notes: {} }, createdAt: new Date().toISOString(), createdBy: state.uid || null,
   }, p || {});
 }
+/* A returning client's discount goes on by itself once, when the job is first looked at. Taking it off sticks. */
+function autoReturning(b) {
+  const S = state.settings;
+  if (state.role !== 'admin' || !S.autoReturning || !num(S.returningPct) || b.returningChecked || !['request', 'quoted'].includes(b.status)) return false;
+  if (b.discount && b.discount.kind && b.discount.kind !== 'none') return false;
+  if (!pastJobs(b)) return false;
+  b.discount = { kind: 'returning', pct: num(S.returningPct) }; b.returningChecked = true; return true;
+}
 function suggestPossession(b) { return Math.max(0, diffDays(b.pickup, b.returnDate) - num(b.shootDays)); }
 function addLineTo(b, id, qty) {
   const it = state.cat.byId[id]; if (!it) return;
@@ -391,6 +555,7 @@ function addCrewTo(b, role) {
 }
 async function createBooking(b, openIt) {
   if (!db) { toast('Jobs need the shared database, which is not available in this view.'); return null; }
+  stampBill(b);
   try { await db.collection('bookings').doc(b.id).set(b); } catch (e) { writeError(e); return null; }
   if (openIt) openBooking(b.id, clone(b));
   return b;
@@ -403,14 +568,28 @@ async function flushSave() {
   if (saving) { saveAgain = true; return; }
   saving = true;
   state.draft.updatedAt = new Date().toISOString(); state.draft.updatedBy = state.uid || null;
+  keepClientFields(state.draft);
+  stampBill(state.draft);
   const body = clone(state.draft);
   try { await db.collection('bookings').doc(body.id).set(body); } catch (e) { writeError(e); }
   saving = false;
   if (saveAgain) { saveAgain = false; flushSave(); } else { state.dirty = false; }
 }
+/* Clients sign, upload paperwork and pay while the team may have the same job open. Before saving the team's copy,
+   carry over what only the client (or Stripe) changes, so an open job never undoes a signature or a payment. */
+function keepClientFields(d) {
+  const fresh = state.bookings.find((x) => x.id === d.id); if (!fresh) return;
+  const fc = fresh.contract || {}; const dc = d.contract || {};
+  if (fc.signature && fc.signedAt && (!dc.signature || String(fc.signedAt) > String(dc.signedAt || '')) && !(dc.status === 'sent' && String(dc.sentAt || '') > String(fc.signedAt))) {
+    d.contract = fc; if (fresh.waiver && fresh.waiver.accepted) d.waiver = fresh.waiver;
+  }
+  if (fresh.coi && fresh.coi.file && fresh.coi.file !== (d.coi && d.coi.file)) d.coi = Object.assign({}, d.coi, { file: fresh.coi.file, docId: fresh.coi.docId, expires: (d.coi && d.coi.expires) || fresh.coi.expires, status: ['none', 'requested', 'rejected', undefined].includes(d.coi && d.coi.status) ? fresh.coi.status : d.coi.status });
+  if (fresh.tax && fresh.tax.certFile && !(d.tax && d.tax.certFile)) d.tax = Object.assign({}, d.tax, { exempt: true, certFile: fresh.tax.certFile, certDocId: fresh.tax.certDocId });
+  const pays = paymentsFor(d); if (pays.length) syncPayFlags(d, pays);
+}
 function writeError(e) {
   const code = e && e.code;
-  if (code === 'invalid_argument') { state.readOnly = true; toast('You can look around but not change anything here. Ask the owner for Contributor access.'); }
+  if (code === 'invalid_argument' || code === 'permission_denied') { state.readOnly = MODE === 'claude'; toast(MODE === 'claude' ? 'You can look around but not change anything here. Ask the owner for Contributor access.' : 'Only the team can change that.'); }
   else if (code === 'quota_exceeded') toast('The shared database is full. Delete old cancelled jobs to make room.');
   else if (code === 'resource_exhausted') toast('Too many saves at once. Give it a moment and try again.');
   else toast('That change did not save. Check your connection and try again.');
@@ -419,9 +598,12 @@ function writeError(e) {
 function openBooking(id, fresh) {
   if (state.draft && state.dirty) flushSave();
   const b = fresh || state.bookings.find((x) => x.id === id); if (!b) return;
-  state.view = 'booking'; state.bookingId = id; state.draft = clone(b); state.dirty = false; state.confirmDelete = false; state.drawer = null;
+  state.view = 'booking'; state.bookingId = id; state.draft = clone(b); state.dirty = false; state.confirmDelete = false; state.drawer = null; state.confirmResend = false;
+  state.payRec = { method: 'venmo', kind: amountDue(state.draft).kind === 'deposit' ? 'deposit' : 'balance', amount: '', note: '' };
   if (!['plan', 'price', 'paperwork', 'handoff'].includes(state.tab)) state.tab = 'plan';
+  const disc = autoReturning(state.draft);
   render(); window.scrollTo(0, 0);
+  if (disc) { scheduleSave(0); toast(`Returning client: ${num(state.settings.returningPct)}% off applied. Change it on the Price tab.`); }
 }
 
 /* ================= rendering ================= */
@@ -433,29 +615,60 @@ function render() {
   pendingRender = false;
   syncTour();
   renderChrome();
-  const views = { welcome: vWelcome, today: vToday, calendar: vCalendar, bookings: vBookings, booking: vBooking, inventory: vInventory, packages: vPackages, fund: vFund, insurance: vInsurance, storefront: vStore, roadmap: vRoadmap, settings: vSettings };
-  const touringHere = state.touring && state.view !== 'welcome';
-  main().innerHTML = (PREVIEW && state.view !== 'welcome' ? previewBar() : '') + (touringHere ? tourBar() : '') + (views[state.view] || vWelcome)() + (touringHere ? tourDock() : '');
-  const screen = state.view + (state.view === 'booking' ? ':' + state.bookingId : '');
+  const views = { welcome: vWelcome, today: vToday, calendar: vCalendar, bookings: vBookings, booking: vBooking, clients: vClients, inventory: vInventory, packages: vPackages, fund: vFund, money: vMoney, insurance: vInsurance, storefront: vStore, roadmap: vRoadmap, settings: vSettings, mine: vMine, account: vAccount };
+  if (!allowedView(state.view) && state.view !== 'booking') state.view = homeFor(state.role);
+  if (state.view === 'booking' && state.role !== 'admin') state.view = homeFor(state.role);
+  const touringHere = state.touring && state.view !== 'welcome' && state.role === 'admin';
+  main().innerHTML = (MODE === 'preview' && state.view !== 'welcome' ? previewBar() : '') + (touringHere ? tourBar() : '') + (views[state.view] || vWelcome)() + (touringHere ? tourDock() : '');
+  const screen = state.view + (state.view === 'booking' ? ':' + state.bookingId : state.view === 'mine' ? ':' + (state.portal.id || '') : '');
   if (screen !== lastScreen) { const v = $('.view', main()); if (v) v.classList.add('enter'); lastScreen = screen; }
   centerTourChip();
   renderDrawer();
   resolveNames();
+  mountSignPad();
+}
+function mountSignPad() {
+  const c = $('#sigPad'); if (!c || c.dataset.ready) return; c.dataset.ready = '1';
+  const dpr = window.devicePixelRatio || 1; const w = c.clientWidth || 480; const h = c.clientHeight || 160;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const ctx = c.getContext('2d'); ctx.scale(dpr, dpr); ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#15161b';
+  if (state.sign.dataUrl) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, w, h); img.src = state.sign.dataUrl; }
+  let drawing = false, last = null;
+  const pt = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const save = () => { const out = document.createElement('canvas'); const k = Math.min(1, 600 / w); out.width = Math.round(w * k); out.height = Math.round(h * k); const o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, out.width, out.height); o.drawImage(c, 0, 0, out.width, out.height); state.sign.dataUrl = out.toDataURL('image/png'); state.sign.drawn = true; };
+  c.addEventListener('pointerdown', (e) => { drawing = true; last = pt(e); c.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last[0], last[1], 1, 0, Math.PI * 2); ctx.fillStyle = '#15161b'; ctx.fill(); e.preventDefault(); });
+  c.addEventListener('pointermove', (e) => { if (!drawing) return; const p = pt(e); ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; e.preventDefault(); });
+  const end = () => { if (!drawing) return; drawing = false; save(); };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end); c.addEventListener('pointerleave', end);
 }
 function renderChrome() {
+  const admin = state.role === 'admin';
   const active = state.bookings.filter((b) => HOLDS.has(b.status)).length;
   const openQ = OPEN.filter((o) => o[0] === 'Open').length + DATA_CHECKS.length;
-  $('#nav').innerHTML = VIEWS.map(([k, l, ic]) => {
+  const mineOpen = state.bookings.filter((b) => clientTodo(b).length).length;
+  document.body.dataset.role = state.role;
+  $('#nav').innerHTML = navViews().map(([k, l, ic]) => {
     const cur = state.view === k || (k === 'bookings' && state.view === 'booking');
-    const count = k === 'bookings' && active ? active : k === 'roadmap' && openQ ? openQ : '';
+    const count = !admin ? (k === 'mine' && mineOpen ? mineOpen : '') : k === 'bookings' && active ? active : k === 'roadmap' && openQ ? openQ : '';
     return `<button type="button" data-act="nav" data-v="${k}" ${cur ? 'aria-current="page"' : ''}>${icon(ic, 16)}<span>${l}</span>${count !== '' ? `<span class="count">${count}</span>` : ''}</button>`;
   }).join('');
   const cur = $('#nav [aria-current]'); if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   $('#brandName').textContent = state.settings.company || 'Shared Gear Pool';
-  const live = { wait: ['', 'Connecting…'], off: ['bad', 'Jobs unavailable here'], error: ['bad', 'Jobs stopped updating'], ready: ['ok', HOSTED ? 'Jobs are shared live' : 'Jobs saved in this browser only'] }[state.dbState];
-  const dot = $('#liveDot'); dot.className = 'live ' + live[0]; dot.title = live[1];
+  const brand = $('.brand'); if (brand) brand.dataset.v = admin ? 'welcome' : 'storefront';
+  const live = { wait: ['', 'Connecting…'], off: ['bad', MODE === 'live' ? 'Not connected' : 'Jobs unavailable here'], error: ['bad', 'Stopped updating'], ready: ['ok', MODE === 'preview' ? 'Saved in this browser only' : 'Live'] }[state.dbState];
+  const dot = $('#liveDot'); dot.className = 'live ' + live[0]; dot.title = live[1]; dot.setAttribute('aria-label', live[1]);
+  const btns = $('#topBtns'); if (btns) btns.innerHTML = topButtons();
   const c = state.cat;
-  $('#footStatus').innerHTML = `<span>${esc(live[1])}${state.readOnly ? ' · view only' : ''}</span><span>${c.source === 'sheet' ? `Rates synced from the sheet ${esc(fmtStamp(c.syncedAt))}` : `Rate card as of ${esc(fmtDay(c.asOf, { month: 'short', day: 'numeric', year: 'numeric' }))}`}</span>`;
+  $('#footStatus').innerHTML = admin ? `<span>${esc(live[1])}${state.readOnly ? ' · view only' : ''}</span><span>${c.source === 'sheet' ? `Rates synced from the sheet ${esc(fmtStamp(c.syncedAt))}` : `Rate card as of ${esc(fmtDay(c.asOf, { month: 'short', day: 'numeric', year: 'numeric' }))}`}</span>`
+    : `<span>${esc(state.settings.company || 'Shared Gear Pool')}${state.settings.email ? ` · <a href="mailto:${esc(state.settings.email)}">${esc(state.settings.email)}</a>` : ''}${state.settings.phone ? ` · ${esc(state.settings.phone)}` : ''}</span><span>Rates as of ${esc(fmtDay(c.asOf, { month: 'short', day: 'numeric', year: 'numeric' }))}</span>`;
+}
+const initials = (s) => (String(s || '').trim().split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?');
+function topButtons() {
+  const u = state.user || {};
+  const chip = () => `<button class="acct" type="button" data-act="acctMenu" aria-label="Account${u.email ? ': ' + esc(u.email) : ''}"><span class="av" aria-hidden="true">${esc(initials(u.name || u.email))}</span><span class="nm">${esc(u.name || u.email || 'Account')}</span></button>`;
+  if (state.role === 'admin') return `<button class="btn grad sm" data-act="newBooking" type="button">New job</button>${MODE !== 'claude' && state.user ? chip() : ''}`;
+  if (state.role === 'client') return chip();
+  return `<button class="btn dark sm" type="button" data-act="authOpen" data-m="in">Sign in</button>`;
 }
 function pill(status) { const s = STATUS[status] || { label: status, tone: '' }; return `<span class="pill ${s.tone}">${esc(s.label)}</span>`; }
 function ownerTag(o, full) { return OWNERS[o] ? `<span class="who"><span class="dot ${o}"></span>${esc(full ? OWNERS[o].name : OWNERS[o].short)}</span>` : '<span class="who"><span class="dot"></span>Unassigned</span>'; }
@@ -473,7 +686,9 @@ function dbGate(what) {
 }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 3800); }
 function previewBar() {
-  return `<div class="pv"><div class="pvbar">${icon('lock', 15)}<span><b>Public preview.</b> Names, values, internal notes, research and the sheet link are hidden. Anything you create stays in this browser.</span><a href="#" data-act="nav" data-v="welcome">What's hidden?</a></div></div>`;
+  const r = state.role; const who = (k, l) => `<button type="button" class="chip" data-act="demoRole" data-r="${k}" aria-pressed="${r === k}">${l}</button>`;
+  const say = r === 'admin' ? 'Names, values, internal notes, research and the sheet link are hidden.' : r === 'client' ? 'You are looking around as a client: request gear, sign the agreement and pay. Card payments are simulated.' : 'You are looking around as a visitor who hasn’t signed in.';
+  return `<div class="pv"><div class="pvbar">${icon('lock', 15)}<span><b>Public preview.</b> ${say} Anything you do stays in this browser.</span><span class="pv-who" role="group" aria-label="Look around as">${who('admin', 'Owner')}${who('client', 'Client')}${who('guest', 'Visitor')}</span>${r === 'admin' ? '<a href="#" data-act="nav" data-v="welcome">What’s hidden?</a>' : ''}</div></div>`;
 }
 function previewNote(text) { return PREVIEW ? `<div class="note pvn">${icon('lock', 16)}<span>${text}</span></div>` : ''; }
 function hero(eyebrow, title, sub, actions) { return `<div class="hero"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`; }
@@ -522,7 +737,8 @@ function vWelcome() {
       <div class="actions" style="margin-top:22px"><button class="btn grad" data-act="tourStart">${icon('play', 16)} Take the tour</button>${ex ? `<button class="btn" data-act="tourJob" data-t="plan">Open the example job</button>` : ''}<button class="btn ghost" data-act="nav" data-v="today">Go to Today ${icon('arrow', 14)}</button></div></div>
     ${PREVIEW ? `<div class="card"><div class="hd"><h2 class="t">${icon('lock', 18)} About this preview</h2><span class="pill">Public copy</span></div><div class="bd grid2">
       <div><b>Hidden here</b><ul class="muted small" style="margin:8px 0 0;padding-left:18px;display:grid;gap:6px"><li>Owner names. They show as Owner M, Owner C and Owner S.</li><li>What each piece is worth, its market price range, and where each rate came from.</li><li>Internal notes and open questions about the gear.</li><li>The buying list and growth plan behind the gear fund.</li><li>The market research on the Roadmap.</li><li>The link to the Google Sheet, so syncing is off.</li></ul></div>
-      <div><b>Works the same</b><p class="muted small" style="margin:8px 0 0">Everything else: jobs, quotes, the three budgets, tax, discounts, paperwork, check-out, the schedule, kits, the gear fund and the storefront. The difference is where it's kept: here, anything you create stays in this browser and nobody else sees it. The private version is shared between the three owners and has all of the hidden details.</p></div></div></div>` : ''}
+      <div><b>Works the same</b><p class="muted small" style="margin:8px 0 0">Everything else: jobs, quotes, the three budgets, tax, discounts, paperwork, check-out, the schedule, kits, the gear fund and the storefront. The difference is where it's kept: here, anything you create stays in this browser and nobody else sees it. The private version is shared between the three owners and has all of the hidden details.</p></div></div>
+      <div class="bd" style="border-top:1px solid var(--line)"><div class="row wrap between" style="gap:10px"><span class="small"><b>See the client side too.</b> Request gear, sign the agreement and pay (simulated) the way a client does.</span><span class="pv-who" role="group" aria-label="Look around as"><button type="button" class="chip" data-act="demoRole" data-r="admin" aria-pressed="true">Owner</button><button type="button" class="chip" data-act="demoRole" data-r="client" aria-pressed="false">Client</button><button type="button" class="chip" data-act="demoRole" data-r="guest" aria-pressed="false">Visitor</button></span></div></div></div>` : ''}
     <div class="card"><div class="hd"><h2 class="t">How a job moves</h2><span class="muted small">Every job walks the same six steps</span></div><div class="bd flow">${flow.map((f, n) => `<div class="fs"><span class="k">${n + 1}</span><b>${f[0]}</b><span>${f[1]}</span></div>`).join('')}</div></div>
     <div class="card tour" id="tour"><nav class="tour-list" aria-label="Tour stops">${TOUR.map((t, n) => `<button data-act="tourGo" data-i="${n}" ${n === i ? 'aria-current="step"' : ''}><span class="n">${n + 1}</span>${esc(t.title)}</button>`).join('')}</nav>
       <div class="tour-body">
@@ -555,6 +771,11 @@ function collectIssues() {
         if (b.status === 'confirmed' && pw.deposit !== 'received') out.push({ tone: 'warn', b, t: `${name}: deposit not in`, d: `${money(chosen(b).total * num(state.settings.depositPct) / 100)} due.`, tab: 'handoff' });
       }
     }
+    if (['quoted', 'confirmed'].includes(b.status) && contractStale(b)) out.push({ tone: 'warn', b, t: `${name}: agreement out of date`, d: 'The job changed after the agreement was sent. Send the updated version.', tab: 'paperwork' });
+    if (b.coi && b.coi.file && b.coi.status === 'received' && HOLDS.has(b.status)) out.push({ tone: 'info', b, t: `${name}: certificate uploaded`, d: 'The client sent their insurance certificate. Check it and mark it verified.', tab: 'paperwork' });
+    if (b.tax && b.tax.certFile && !b.tax.cert && HOLDS.has(b.status)) out.push({ tone: 'info', b, t: `${name}: ST-121 uploaded`, d: 'Check the exemption certificate and mark it on file.', tab: 'paperwork' });
+    if (b.status === 'out' && b.returnDate === addDays(t, 1)) out.push({ tone: 'info', b, t: `${name} is due back tomorrow`, d: `By ${fmtTime(b.returnTime) || 'the agreed time'}${clientName(b) ? ' · ' + clientName(b) : ''}.`, tab: 'handoff' });
+    paymentsFor(b).filter((p) => p.status === 'reported').forEach((p) => out.push({ tone: 'warn', b, t: `${name}: ${money(num(p.amount))} by ${PAY_METHOD[p.method] || p.method} to confirm`, d: `The client says they sent it${p.note ? ': ' + p.note : ''}. Check it arrived, then confirm it.`, tab: 'handoff' }));
     if (HOLDS.has(b.status)) {
       const cf = conflicts(b).filter((c) => c.kind !== 'hold');
       if (cf.length) out.push({ tone: 'bad', b, t: `${name}: short on ${plural(cf.length, 'item')}`, d: cf.slice(0, 2).map((c) => `${(state.cat.byId[c.id] || { name: c.id }).name}: needs ${c.need}, ${c.have} free`).join(' · '), tab: 'plan' });
@@ -635,7 +856,7 @@ function vCalendar() {
     return `<div class="tl-label" data-act="openBooking" data-id="${b.id}" tabindex="0"><span class="t">${esc(b.project || b.ref)}</span><span>${pill(b.status)}</span></div>${cells}`;
   }).join('');
   return `<section class="view">
-    ${hero('Three weeks from ' + esc(fmtDay(start, { month: 'long', day: 'numeric' })), 'The <em class="s">schedule</em>', 'Every job from the moment gear goes out to the moment it comes back.', `<button class="btn icon" data-act="calMove" data-n="-7" aria-label="Previous week">${icon('back', 16)}</button><button class="btn" data-act="calToday">This week</button><button class="btn icon" data-act="calMove" data-n="7" aria-label="Next week">${icon('arrow', 16)}</button>`)}
+    ${hero('Three weeks from ' + esc(fmtDay(start, { month: 'long', day: 'numeric' })), 'The <em class="s">schedule</em>', 'Every job from the moment gear goes out to the moment it comes back.', `<button class="btn icon" data-act="calMove" data-n="-7" aria-label="Previous week">${icon('back', 16)}</button><button class="btn" data-act="calToday">This week</button><button class="btn icon" data-act="calMove" data-n="7" aria-label="Next week">${icon('arrow', 16)}</button><button class="btn ghost" data-act="icsAll">${icon('calendar', 16)} Add to my calendar</button>`)}
     <div class="legend"><span><i style="background:var(--grad)"></i>Shoot day</span><span><i style="background:repeating-linear-gradient(135deg,var(--warm-soft) 0 6px,color-mix(in srgb,var(--tungsten) 35%,transparent) 6px 8px)"></i>Held, not shooting (half rate)</span><span><i style="background:var(--grad);opacity:.45"></i>Not confirmed yet</span></div>
     ${state.dbState !== 'ready' ? `<div class="card">${dbGate('jobs')}</div>` : `<div class="card"><div class="tl" style="--days:${N}"><div class="tl-grid">${head}${body || '<div style="grid-column:1/-1" class="empty"><b>Nothing booked in these three weeks</b><span>Look further out with the arrows, or start a new job.</span></div>'}</div></div></div>`}
   </section>`;
@@ -691,7 +912,7 @@ function bPlan(b) {
   const lines = (b.lines || []).map((ln, i) => {
     const it = cat.byId[ln.id] || { name: 'Not on the gear list', own: '', cat: 'Kit' }; const k = cfBy[ln.id];
     const flag = k ? `<span class="flag ${k.kind === 'hold' ? '' : 'bad'}">${k.kind === 'hold' ? `held on another job, ${k.have} free` : k.kind === 'missing' ? 'not on the gear list' : `only ${k.have} free these dates`}</span>` : hasQuestion(ln.id) ? '<span class="flag">details still to confirm</span>' : '';
-    return `<div class="gear-row">${tile(it.cat, true)}<div class="grow"><div class="ttl" data-act="item" data-id="${esc(ln.id)}" style="cursor:pointer">${esc(it.name)}</div><div class="sub">${ownerTag(it.own)} · ${money(lineRate(ln))}/day${perLens(it) ? ' per lens' : ''}${flag ? ' · ' + flag : ''}</div></div>
+    return `<div class="gear-row">${thumb(Object.assign({ id: ln.id }, it), true)}<div class="grow"><div class="ttl" data-act="item" data-id="${esc(ln.id)}" style="cursor:pointer">${esc(it.name)}</div><div class="sub">${ownerTag(it.own)} · ${money(lineRate(ln))}/day${perLens(it) ? ' per lens' : ''}${flag ? ' · ' + flag : ''}</div></div>
       <div class="ctl"><div class="stepper" aria-label="Quantity"><button data-act="qty" data-i="${i}" data-d="-1" aria-label="One fewer">−</button><b>${esc(ln.qty)}</b><button data-act="qty" data-i="${i}" data-d="1" aria-label="One more">+</button></div>
         <label class="mini">Days<input type="number" min="0" step="1" data-line="${i}" data-f="days" value="${esc(ln.days)}"></label>
         <label class="mini">Rate<input type="number" min="0" step="1" data-line="${i}" data-f="rate" value="${ln.rate == null ? '' : esc(ln.rate)}" placeholder="${it.rec == null ? 0 : it.rec}"></label>
@@ -723,6 +944,7 @@ function bPlan(b) {
       <label class="field"><span>By</span><input type="time" id="b-rtime" data-b="returnTime" value="${esc(b.returnTime)}"></label>
       <label class="field"><span>Hold days</span><input type="number" min="0" id="b-poss" data-b="possessionDays" data-type="num" value="${esc(b.possessionDays)}"><small id="posshint">${holdHint(b, sugg)}</small></label>
       <label class="field"><span>Prep and test visit</span><input type="date" id="b-prep" data-b="prepDate" value="${esc(b.prepDate)}"><small>Optional. A free check of the gear before pickup.</small></label>
+      <div class="wide">${calButtons(b)}</div>
       ${wkOk ? `<div class="note wide row between wrap"><span>${icon('spark', 16)} <b>Weekend special.</b> ${b.weekendOff ? 'Switched off for this job.' : 'Out Friday, back Monday morning: the whole rental bills as one day, no hold days.'}</span><button class="btn sm" data-act="weekendToggle">${b.weekendOff ? 'Apply it' : "Don't apply"}</button></div>` : ''}
     </div></div>
     <div class="card"><div class="hd"><h2 class="t">Handoff</h2><span class="muted small">${h.out === 'pickup' && h.back === 'pickup' ? 'Client collects and returns' : money(handoffFee(h.out) + handoffFee(h.back)) + ' in handoff fees'}</span></div><div class="bd form">
@@ -769,28 +991,29 @@ function bPrice(b) {
       <aside class="stack sticky"><div class="card"><div class="hd"><h2 class="t">Where the gear money goes</h2></div><div class="bd stack" id="payouts">${payouts(b, c)}</div></div></aside></div></div>`;
 }
 function budgetCards(b, all) { const T = b.budget || 'A'; return TIERS.map((x) => `<button class="budget" data-act="budget" data-t="${x}" aria-pressed="${x === T}"><span class="nm">${BUDGET[x].name}</span><span class="pr">${money(all[x].total)}</span><span class="ds">${BUDGET[x].desc} · ${money(all[x].perDay)} per shoot day</span></button>`).join(''); }
-function receipt(b, c) {
-  const S = state.settings; const row = (l, v, cls) => `<dt${cls ? ` class="${cls}"` : ''}>${l}</dt><dd${cls ? ` class="${cls}"` : ''}>${v}</dd>`;
-  return `<dl class="kv">
-    ${row(`Gear rental${c.weekend ? ' · weekend special, one day' : b.rateMode === 'week' ? ' · film-week pricing' : ''}`, money(c.equip))}
-    ${c.possession ? row(`Hold days · ${plural(num(b.possessionDays), 'day')} at ${num(S.possessionPct)}%`, money(c.possession)) : ''}
-    ${c.discount ? row(`${DISCOUNTS[b.discount.kind]} discount · ${discountPct(b)}%`, '−' + money(c.discount)) : ''}
-    ${row('Crew', money(c.crew))}
-    ${c.exp ? row('Expendables, at cost', money(c.exp)) : ''}
-    ${c.handoff ? row('Delivery and handoff', money(c.handoff)) : ''}
-    ${c.waiver ? row(`Damage waiver · ${num(S.waiverPct)}%`, money(c.waiver)) : ''}
-    ${c.late ? row('Late return', money(c.late)) : ''}
-    ${row('Subtotal', money(c.subtotal), 'tot')}
-    ${row(b.tax && b.tax.exempt ? 'Sales tax · exempt with ST-121' : `NY sales tax · ${pctTxt(S.salesTaxPct)} on ${money(c.taxable)}`, money(c.tax))}
-    ${row('<b>Total</b>', `<b>${money(c.total)}</b>`, 'tot')}
-    ${row(`Deposit to confirm · ${num(S.depositPct)}%`, money(c.total * num(S.depositPct) / 100))}
-    ${c.comp ? row('Given on the house', money(c.comp)) : ''}
-  </dl>`;
+function receiptRows(b, c) {
+  const S = state.settings; const r = [];
+  r.push({ l: `Gear rental${c.weekend ? ' · weekend special, one day' : b.rateMode === 'week' ? ' · film-week pricing' : ''}`, v: c.equip });
+  if (c.possession) r.push({ l: `Hold days · ${plural(num(b.possessionDays), 'day')} at ${num(S.possessionPct)}%`, v: c.possession });
+  if (c.discount) r.push({ l: `${DISCOUNTS[b.discount.kind]} discount · ${discountPct(b)}%`, v: -c.discount });
+  r.push({ l: 'Crew', v: c.crew });
+  if (c.exp) r.push({ l: 'Expendables, at cost', v: c.exp });
+  if (c.handoff) r.push({ l: 'Delivery and handoff', v: c.handoff });
+  if (c.waiver) r.push({ l: `Damage waiver · ${num(S.waiverPct)}%`, v: c.waiver });
+  if (c.late) r.push({ l: 'Late return', v: c.late });
+  r.push({ l: 'Subtotal', v: c.subtotal, c: 'tot' });
+  r.push({ l: b.tax && b.tax.exempt ? 'Sales tax · exempt with ST-121' : `NY sales tax · ${pctTxt(S.salesTaxPct)} on ${money(c.taxable)}`, v: c.tax });
+  r.push({ l: 'Total', v: c.total, c: 'tot', b: true });
+  r.push({ l: `Deposit to confirm · ${num(S.depositPct)}%`, v: c.total * num(S.depositPct) / 100 });
+  if (c.comp) r.push({ l: 'Given on the house', v: c.comp, x: true });
+  return r.map((x) => Object.assign(x, { v: round2(x.v) }));
 }
+function rowsHtml(rows) { return `<dl class="kv">${rows.map((r) => `<dt${r.c ? ` class="${r.c}"` : ''}>${r.b ? `<b>${esc(r.l)}</b>` : esc(r.l)}</dt><dd${r.c ? ` class="${r.c}"` : ''}>${r.b ? `<b>${money(r.v)}</b>` : money(r.v)}</dd>`).join('')}</dl>`; }
+function receipt(b, c) { return rowsHtml(receiptRows(b, c)); }
 function payouts(b, c) {
   const f = fundTotals();
   return `<div class="row" style="gap:14px"><span class="icon-tile t-Kit">${icon('fund', 21)}</span><div class="grow"><div class="mid">${money(c.fund)}</div><div class="muted small">${pctTxt(c.fundPct)} of ${money(c.gear)} gear rental, toward ${f.next ? esc(f.next.name) : 'the buying list'}</div></div></div>
-    <div class="tbl"><table class="plain"><thead><tr><th>Owner</th><th class="n">Gets</th><th class="n">On the house</th></tr></thead><tbody>${OWN.map((o) => `<tr><td>${ownerTag(o)}</td><td class="n">${money(c.own[o].net)}</td><td class="n">${c.own[o].comped ? money(c.own[o].comped) : '—'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="tbl" tabindex="0"><table class="plain"><thead><tr><th>Owner</th><th class="n">Gets</th><th class="n">On the house</th></tr></thead><tbody>${OWN.map((o) => `<tr><td>${ownerTag(o)}</td><td class="n">${money(c.own[o].net)}</td><td class="n">${c.own[o].comped ? money(c.own[o].comped) : '—'}</td></tr>`).join('')}</tbody></table></div>
     <span class="faint small">Each owner's gear rental, after any discount and the fund share. Crew is paid separately.</span>${previewNote('Owner names are hidden in the public preview.')}`;
 }
 function refreshDerived() {
@@ -817,14 +1040,19 @@ function bPaperwork(b) {
   <aside class="stack">
     <div class="card"><div class="hd"><h2 class="t">Agreement</h2><span class="pill ${ct.status === 'signed' ? 'good' : ct.status === 'sent' ? 'info' : ''}">${{ draft: 'Draft', sent: 'Sent', signed: 'Signed' }[ct.status || 'draft']}</span></div><div class="bd stack">
       <div class="seg" role="group" aria-label="Agreement status">${['draft', 'sent', 'signed'].map((s) => `<button data-act="contract" data-s="${s}" aria-pressed="${(ct.status || 'draft') === s}">${s[0].toUpperCase() + s.slice(1)}</button>`).join('')}</div>
-      ${ct.status === 'signed' ? `<div class="form" style="grid-template-columns:1fr 1fr"><label class="field"><span>Signed by</span><input type="text" id="ct-signer" data-b="contract.signer" value="${esc(ct.signer)}"></label><label class="field"><span>On</span><input type="date" id="ct-date" data-b="contract.signedOn" value="${esc(ct.signedOn)}"></label></div>` : ''}
-      <div class="actions"><button class="btn sm" data-act="copyAgreement">Copy text</button>${state.canDownload ? '<button class="btn sm" data-act="dlAgreement">Download</button><button class="btn sm" data-act="dlSchedule">Gear list .csv</button>' : ''}</div>
+      ${state.confirmResend ? `<div class="note bad">They signed this electronically. Sending it again clears their signature so they can sign the new version. <div class="actions" style="margin-top:8px"><button class="btn danger sm" data-act="resendAgreement">Send the new version</button><button class="btn ghost sm" data-act="keepSigned">Keep the signed one</button></div></div>` : ''}
+      ${ct.signature ? sigBlock(ct) : ct.status === 'signed' ? `<div class="form" style="grid-template-columns:1fr 1fr"><label class="field"><span>Signed by</span><input type="text" id="ct-signer" data-b="contract.signer" value="${esc(ct.signer)}"></label><label class="field"><span>On</span><input type="date" id="ct-date" data-b="contract.signedOn" value="${esc(ct.signedOn)}"></label></div>` : ''}
+      ${ct.status === 'sent' ? `<span class="small muted">Sent ${esc(fmtStamp(ct.sentAt))}. ${MODE === 'claude' ? 'Copy or download it to send.' : 'If the client has an account, they sign it under My bookings. Otherwise copy or download it to send.'}</span>` : ''}
+      ${contractStale(b) && !state.confirmResend ? `<div class="note warn">The job changed after this agreement went out.<div class="actions" style="margin-top:8px"><button class="btn sm dark" data-act="${ct.signature ? 'contract' : 'resendAgreement'}" data-s="sent">Send the updated agreement</button></div></div>` : ''}
+      <div class="actions"><button class="btn sm" data-act="copyAgreement">Copy text</button>${state.canDownload ? `<button class="btn sm" data-act="dlAgreement">Download</button>${ct.signature ? `<button class="btn sm" data-act="dlSigned" data-id="${esc(b.id)}">Signed copy</button>` : ''}<button class="btn sm" data-act="dlSchedule">Gear list .csv</button>` : ''}</div>
       <span class="faint small">The agreement rebuilds itself from the quote. Have a New York attorney review the template before the first outside rental.</span></div></div>
     <div class="card"><div class="hd"><h2 class="t">How the gear is covered</h2><span class="pill ${p.ok ? 'good' : 'warn'}">${p.ok ? 'Covered' : 'Not yet'}</span></div><div class="bd stack">
       ${opt('coi', 'Insurance certificate', `The client's policy covers ${money(c.repl)} of rented gear and names you.`, true)}
       ${opt('hold', 'Card hold', `For gear worth up to ${money(num(S.holdMax))} and up to ${plural(num(S.holdMaxDays), 'billed day')}. The replacement value is held on their card.`, c.repl <= num(S.holdMax) && c.billedDays <= num(S.holdMaxDays) || b.protection === 'hold')}
       ${opt('waiver', 'Damage waiver', S.waiverOn ? `${num(S.waiverPct)}% of the gear rental. Caps their liability for accidental damage at ${num(S.waiverCapPct)}% of replacement value.` : 'Switched off in Settings until your own policy backs it.', S.waiverOn || b.protection === 'waiver')}
       <div class="checklist">${p.checks.map((x) => `<div class="${x.ok ? 'ok' : 'bad'}"><span>${esc(x.t)}<span class="sub">${esc(x.have)}</span></span></div>`).join('')}</div>
+      ${p.mode === 'coi' && coi.file ? `<div class="doc-row">${icon('doc', 16)}<span class="grow small">The client uploaded their certificate${coi.expires ? `, expiring ${esc(fmtDay(coi.expires))}` : ''}. Check it against the list above.</span><button class="btn sm" data-act="openDoc" data-path="${esc(coi.file)}">Open</button></div>` : ''}
+      ${p.mode === 'coi' ? onFileCoi(b) : ''}
       ${p.mode === 'coi' ? `<div class="form" style="grid-template-columns:1fr 1fr">
         <label class="field"><span>Status</span><select id="coi-status" data-b="coi.status">${Object.keys(COI_STATUS).map((k) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${COI_STATUS[k]}</option>`).join('')}</select></label>
         <label class="field"><span>Insurer</span><input type="text" id="coi-ins" data-b="coi.insurer" value="${esc(coi.insurer)}"></label>
@@ -842,6 +1070,7 @@ function bPaperwork(b) {
     <div class="card"><div class="hd"><h2 class="t">Sales tax</h2><span class="pill ${!t.exempt ? '' : t.cert ? 'good' : 'warn'}">${!t.exempt ? `Charging ${pctTxt(S.salesTaxPct)}` : t.cert ? 'Exempt · certificate on file' : 'Exempt · certificate missing'}</span></div><div class="bd stack">
       <label class="check"><input type="checkbox" id="tax-ex" data-b="tax.exempt" data-type="bool" ${t.exempt ? 'checked' : ''}><span>The client is making a film for sale and claims the exemption</span></label>
       ${t.exempt ? `<label class="check"><input type="checkbox" id="tax-cert" data-b="tax.cert" data-type="bool" ${t.cert ? 'checked' : ''}><span>Their Form ST-121 is on file</span></label>` : ''}
+      ${t.certFile ? `<div class="doc-row">${icon('doc', 16)}<span class="grow small">The client uploaded an ST-121${t.cert ? '' : '. Check it, then tick the box above'}.</span><button class="btn sm" data-act="openDoc" data-path="${esc(t.certFile)}">Open</button></div>` : !t.cert ? onFileSt121(b) : ''}
       <span class="faint small">New York lets productions rent gear tax-free when it is used directly and mostly to make a film for sale. Keep their ST-121 on file.</span></div></div>
     ${fifa.length ? `<div class="note">Crew agreements are separate. ${fifa.map((x) => esc(x.role)).join(', ')} ${fifa.length === 1 ? 'crosses' : 'cross'} $800 on this job, so New York needs a written contract.</div>` : ''}
   </aside></div>`;
@@ -854,8 +1083,8 @@ function bHandoff(b) {
   const blockers = []; if (pw.contract !== 'signed') blockers.push('The agreement is not signed.'); if (!pw.protectionOk) blockers.push('The gear is not covered yet.'); if (!pw.taxOk) blockers.push('The tax certificate is missing.');
   const late = b.returnDate ? Math.max(0, diffDays(b.returnDate, todayStr())) : 0; const dayRate = chosen(b).dayRate;
   const canOut = ['quoted', 'confirmed'].includes(b.status); const canIn = b.status === 'out'; const h = b.handoff || {};
-  return `<div class="split"><div class="card"><div class="hd"><h2 class="t">Check-out sheet</h2><span class="muted small">${plural(lines.length, 'item')} · ${BUDGET[b.budget || 'A'].name}</span></div>
-    <div class="bd flush">${lines.length ? lines.map((l) => { const it = state.cat.byId[l.id] || { name: l.id, cat: 'Kit' }; return `<div class="gear-row">${tile(it.cat, true)}<div class="grow"><div class="ttl">${esc(it.name)}${num(l.qty) > 1 ? ` <span class="muted">× ${num(l.qty)}</span>` : ''}</div><div class="sub">${esc(it.kit || it.cat)}</div></div>
+  return `<div class="split"><div class="card"><div class="hd"><h2 class="t">Check-out sheet</h2><div class="actions"><span class="muted small">${plural(lines.length, 'item')} · ${BUDGET[b.budget || 'A'].name}</span>${(canOut || canIn) && lines.length && !state.readOnly ? `<button class="btn dark sm" data-act="scanStart">${icon('qr', 14)} Scan labels</button>` : ''}</div></div>
+    <div class="bd flush">${lines.length ? lines.map((l) => { const it = state.cat.byId[l.id] || { id: l.id, name: l.id, cat: 'Kit' }; const sn = serialsOf(l.id); const got = unitsDone(co, l); return `<div class="gear-row">${thumb(it, true)}<div class="grow"><div class="ttl">${esc(it.name)}${num(l.qty) > 1 ? ` <span class="muted">× ${num(l.qty)}</span>` : ''}</div><div class="sub">${esc(it.kit || it.cat)}${sn ? ` · S/N ${esc(sn)}` : ''}${got ? ` · <b>${esc(got)}</b>` : ''}</div></div>
       <div class="ctl"><label class="check small"><input type="checkbox" data-co="out" data-k="${esc(l.id)}" ${co.out && co.out[l.id] ? 'checked' : ''} ${state.readOnly ? 'disabled' : ''}> Out</label>
         <label class="check small"><input type="checkbox" data-co="back" data-k="${esc(l.id)}" ${co.back && co.back[l.id] ? 'checked' : ''} ${state.readOnly || !['out', 'returned', 'closed'].includes(b.status) ? 'disabled' : ''}> Back</label>
         <input type="text" data-conote="${esc(l.id)}" value="${esc(co.notes && co.notes[l.id])}" placeholder="Condition notes" aria-label="Notes for ${esc(it.name)}" style="width:200px"></div></div>`; }).join('')
@@ -870,9 +1099,7 @@ function bHandoff(b) {
     ${canIn ? `${late ? `<div class="note bad">${plural(late, 'day')} late. At the full day rate that's ${money(late * dayRate)}.</div>` : ''}<button class="btn grad" data-act="checkIn">Mark as back${backAll ? '' : ` (${lines.filter((l) => !(co.back && co.back[l.id])).length} not ticked)`}</button>` : ''}
     ${!canOut && !canIn ? `<span class="muted small">${b.status === 'request' ? 'Quote and confirm the job first.' : 'This job is ' + STATUS[b.status].label.toLowerCase() + '.'}</span>` : ''}
     ${b.late && b.late.days ? `<dl class="kv"><dt>Late return charge</dt><dd>${money(b.late.fee)}</dd></dl>` : ''}
-    <div class="form" style="grid-template-columns:1fr 1fr"><label class="field"><span>Deposit</span><select id="dep" data-b="deposit.status"><option value="none" ${pw.deposit !== 'received' ? 'selected' : ''}>Not in</option><option value="received" ${pw.deposit === 'received' ? 'selected' : ''}>Received</option></select></label>
-    <label class="field"><span>Balance</span><select id="bal" data-b="payment"><option value="unpaid" ${b.payment !== 'paid' ? 'selected' : ''}>Unpaid</option><option value="paid" ${b.payment === 'paid' ? 'selected' : ''}>Paid</option></select></label></div>
-  </div></div></aside></div>`;
+  </div></div>${adminPayCard(b)}</aside></div>`;
 }
 
 /* ---------- Gear ---------- */
@@ -888,14 +1115,14 @@ function availPill(it, from, to) {
 }
 function gearRow(i) {
   const f = state.inv; const av = availPill(i, f.from, f.to);
-  return `<button class="g-row" data-act="item" data-id="${i.id}">${tile(i.cat, true)}<div class="grow"><div class="ttl">${esc(i.name)}</div><div class="muted small">${i.qty > 1 ? `${i.qty} in the pool` : i.qty === 0 ? 'Not itemized yet' : 'One in the pool'}${i.kit ? ' · ' + esc(i.kit) : ''}</div>${av || (hasQuestion(i.id) ? '<span class="pill warn">To confirm</span>' : '')}</div>
+  return `<button class="g-row" data-act="item" data-id="${i.id}">${thumb(i, true)}<div class="grow"><div class="ttl">${esc(i.name)}</div><div class="muted small">${i.qty > 1 ? `${i.qty} in the pool` : i.qty === 0 ? 'Not itemized yet' : 'One in the pool'}${i.kit ? ' · ' + esc(i.kit) : ''}</div>${av || (hasQuestion(i.id) ? '<span class="pill warn">To confirm</span>' : '')}</div>
     <div class="g-side">${i.rec != null ? `<span class="g-price">${money(i.rec)}<small>/day${perLens(i) ? ' per lens' : ''}</small></span>` : `<span class="muted small">${i.cat === 'Consumable' ? 'At cost' : 'In kit rate'}</span>`}${ownerTag(i.own)}</div></button>`;
 }
 function vInventory() {
   const f = state.inv; const rows = invFiltered(); const cats = CAT_ORDER.filter((c) => state.cat.items.some((i) => i.cat === c));
   const allOpen = cats.every((c) => f.open[c]);
   return `<section class="view">
-    ${hero(`${state.cat.items.length} pieces across three kits`, 'The <em class="s">gear</em>', 'Everything the pool owns, with the day rate to quote. Open a section to see what is in it, or search.')}
+    ${hero(`${state.cat.items.length} pieces across three kits`, 'The <em class="s">gear</em>', 'Everything the pool owns, with the day rate to quote. Open a section to see what is in it, or search.', `<button class="btn" data-act="labelsOpen">${icon('qr', 16)} Print labels</button>`)}
     <div class="card"><div class="bd stack">
       <div class="form"><label class="field"><span>Search</span><input type="search" id="inv-q" data-inv="q" value="${esc(f.q)}" placeholder="Try “C-stand” or “Ronin”"></label>
         <label class="field"><span>Free from</span><input type="date" id="inv-from" data-inv="from" value="${esc(f.from)}"></label><label class="field"><span>Until</span><input type="date" id="inv-to" data-inv="to" value="${esc(f.to)}"></label></div>
@@ -925,9 +1152,10 @@ function vPackages() {
   return `<section class="view">
     ${hero('Ready to go', 'Kits that <em class="s">work together</em>', 'Open a kit to see what is inside and what it costs for longer. Each kit reprices itself when a piece inside it changes.')}
     <div class="stack" style="gap:12px">${state.cat.packages.map((p) => { const op = crewFor(p.id); const open = !!state.kitOpen[p.id];
-      return `<div class="card sec ${open ? 'open' : ''}"><button class="sec-btn" data-act="kitSec" data-id="${p.id}" aria-expanded="${open}">${tile('Kit')}<div class="grow"><div class="sec-t">${esc(p.name)}</div><div class="muted small clamp">${plural(p.ids.length, 'piece')} · ${esc(p.contents)}</div></div><span class="sec-price">${money(p.day)}<small>/day</small></span><span class="chev">${icon('down', 18)}</span></button>
+      return `<div class="card sec ${open ? 'open' : ''}"><button class="sec-btn" data-act="kitSec" data-id="${p.id}" aria-expanded="${open}">${kitThumb(p)}<div class="grow"><div class="sec-t">${esc(p.name)}</div><div class="muted small clamp">${plural(p.ids.length, 'piece')} · ${esc(p.contents)}</div></div><span class="sec-price">${money(p.day)}<small>/day</small></span><span class="chev">${icon('down', 18)}</span></button>
       ${open ? `<div class="sec-body">
-        <div class="kit-items">${p.ids.map((id) => { const it = state.cat.byId[id]; if (!it) return ''; return `<button class="g-row" data-act="item" data-id="${id}">${tile(it.cat, true)}<div class="grow"><div class="ttl">${esc(it.name)}</div><div class="muted small">${it.qty > 1 ? `× ${it.qty}` : 'One'}</div></div><div class="g-side">${it.rec != null ? `<span class="g-price">${money(it.rec * it.qty)}<small>/day</small></span>` : '<span class="muted small">In kit rate</span>'}</div></button>`; }).join('')}</div>
+        ${state.role === 'admin' ? photoGallery(p.id, true, p.name) : ''}
+        <div class="kit-items">${p.ids.map((id) => { const it = state.cat.byId[id]; if (!it) return ''; return `<button class="g-row" data-act="item" data-id="${id}">${thumb(it, true)}<div class="grow"><div class="ttl">${esc(it.name)}</div><div class="muted small">${it.qty > 1 ? `× ${it.qty}` : 'One'}</div></div><div class="g-side">${it.rec != null ? `<span class="g-price">${money(it.rec * it.qty)}<small>/day</small></span>` : '<span class="muted small">In kit rate</span>'}</div></button>`; }).join('')}</div>
         <div class="ladder">${[[1, '1 day'], [2, '2 days'], [3, '3 days'], [5, 'A week']].map(([d, l]) => `<div><span>${l}</span><b>${money(p.day * weekFactor(d))}</b></div>`).join('')}</div>
         <dl class="kv"><dt>Held, not shooting</dt><dd>${money(p.day * pctP)}/day</dd>${op ? `<dt>With a ${esc(op.role)}</dt><dd>+${money(op.rate)}/day</dd>` : ''}</dl>
         ${p.missing.length ? `<div class="note bad">Not on the gear list: ${p.missing.map(esc).join(', ')}. Priced at zero.</div>` : ''}
@@ -969,7 +1197,7 @@ function vFund() {
         : PREVIEW ? `<div class="bd">${previewNote('The pool\u2019s buying list, its Missing Gear plan with prices, is hidden in the public preview. Add a few things below to see how the fund works.')}</div>` : '<div class="empty"><b>The buying list is empty</b><span>It comes from the Missing Gear tab of the full rate card. You can also add things here.</span></div>'}
       ${f.queue.length > shown.length || state.fundShowAll ? `<div class="bd" style="padding-top:8px;padding-bottom:8px"><button class="btn ghost sm" data-act="fundAll">${state.fundShowAll ? 'Show just what\u2019s next' : `Show all ${f.queue.length}${f.queue.length - open.length ? `, including ${f.queue.length - open.length} bought` : ''}`}</button></div>` : ''}
     </div><div class="bd" style="border-top:1px solid var(--line)"><div class="row wrap" style="gap:10px"><input type="text" id="fund-name" data-fund="name" value="${esc(state.fundAdd.name)}" placeholder="Add something to buy" style="flex:2;min-width:180px"><input type="number" min="0" id="fund-cost" data-fund="cost" value="${esc(state.fundAdd.cost)}" placeholder="Cost" style="flex:1;min-width:100px"><button class="btn dark" data-act="fundAdd">${icon('plus', 14)} Add</button></div></div></div>
-    <div class="card"><div class="hd"><h2 class="t">Payouts</h2><span class="muted small">Confirmed jobs onward, after the fund's share</span></div><div class="bd flush">${state.dbState !== 'ready' ? dbGate('jobs') : earned.length ? `<div class="tbl"><table class="plain"><thead><tr><th>Job</th>${OWN.map((o) => `<th class="n">${esc(OWNERS[o].short)}</th>`).join('')}<th class="n">Gear fund</th></tr></thead><tbody>${earned.map((b) => { const c = chosen(b); return `<tr class="click" data-act="openBooking" data-id="${b.id}" tabindex="0"><td><b>${esc(b.project || b.ref)}</b><div class="muted small">${esc(fmtDay(b.pickup))} · ${STATUS[b.status].label}</div></td>${OWN.map((o) => `<td class="n">${money(c.own[o].net)}</td>`).join('')}<td class="n">${money(c.fund)}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="empty"><b>No confirmed jobs yet</b><span>Payouts appear once a job is confirmed.</span></div>'}</div></div>
+    <div class="card"><div class="hd"><h2 class="t">Payouts</h2><span class="muted small">Confirmed jobs onward, after the fund's share</span></div><div class="bd flush">${state.dbState !== 'ready' ? dbGate('jobs') : earned.length ? `<div class="tbl" tabindex="0"><table class="plain"><thead><tr><th>Job</th>${OWN.map((o) => `<th class="n">${esc(OWNERS[o].short)}</th>`).join('')}<th class="n">Gear fund</th></tr></thead><tbody>${earned.map((b) => { const c = chosen(b); return `<tr class="click" data-act="openBooking" data-id="${b.id}" tabindex="0"><td><b>${esc(b.project || b.ref)}</b><div class="muted small">${esc(fmtDay(b.pickup))} · ${STATUS[b.status].label}</div></td>${OWN.map((o) => `<td class="n">${money(c.own[o].net)}</td>`).join('')}<td class="n">${money(c.fund)}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="empty"><b>No confirmed jobs yet</b><span>Payouts appear once a job is confirmed.</span></div>'}</div></div>
   </section>`;
 }
 
@@ -989,18 +1217,23 @@ function vInsurance() {
     </div>
     <div class="grid2">
       <div class="card"><div class="hd"><h2 class="t">Your gear schedule</h2><span class="muted small">${total ? money(total) + ' · ' : ''}${items.length} lines</span></div><div class="bd stack">
-        ${total ? `<div class="tbl"><table class="plain"><thead><tr><th>Owner</th><th class="n">Lines</th><th class="n">Value</th></tr></thead><tbody>${OWN.map((o) => { const mine = items.filter((i) => i.own === o); return `<tr><td>${ownerTag(o, true)}</td><td class="n">${mine.length}</td><td class="n">${money(sum(mine, (i) => (i.resale || 0) * i.qty))}</td></tr>`; }).join('')}<tr class="total"><td>Everything</td><td class="n">${items.length}</td><td class="n">${money(total)}</td></tr></tbody></table></div>` : (PREVIEW ? previewNote('What each piece is worth is hidden in the public preview, so the schedule has no values here. The download lists every piece without them.') : '<div class="note">This copy of the rate card has no resale values. The full rate card fills in the schedule.</div>')}
-        <span class="muted small">The download has an empty serial-number column. Insurers ask for serials on anything over about $500. Kit parts carry no value of their own so nothing is insured twice.</span></div></div>
+        ${total ? `<div class="tbl" tabindex="0"><table class="plain"><thead><tr><th>Owner</th><th class="n">Lines</th><th class="n">Value</th></tr></thead><tbody>${OWN.map((o) => { const mine = items.filter((i) => i.own === o); return `<tr><td>${ownerTag(o, true)}</td><td class="n">${mine.length}</td><td class="n">${money(sum(mine, (i) => (i.resale || 0) * i.qty))}</td></tr>`; }).join('')}<tr class="total"><td>Everything</td><td class="n">${items.length}</td><td class="n">${money(total)}</td></tr></tbody></table></div>` : (PREVIEW ? previewNote('What each piece is worth is hidden in the public preview, so the schedule has no values here. The download lists every piece without them.') : '<div class="note">This copy of the rate card has no resale values. The full rate card fills in the schedule.</div>')}
+        <span class="muted small">${(() => { const need = items.filter((i) => (i.resale || 0) >= 500 && !serialsOf(i.id)).length; return need ? `${plural(need, 'piece')} worth $500 or more ${need === 1 ? 'has' : 'have'} no serial number yet. Insurers ask for them; add them from each piece's details on the Gear page.` : 'Serial numbers come from each piece\u2019s details on the Gear page.'; })()} Kit parts carry no value of their own so nothing is insured twice.</span></div></div>
       <div class="card"><div class="hd"><h2 class="t">Renters right now</h2></div><div class="bd flush">${state.dbState !== 'ready' ? dbGate('jobs') : active.length ? active.map((b) => { const p = protectionState(b); return `<div class="li click" data-act="openBooking" data-id="${b.id}" data-tab="paperwork" tabindex="0"><div class="grow"><div class="ttl">${esc(b.project || b.ref)}</div><div class="sub">Goes out ${esc(fmtDay(b.pickup))} · ${money(chosen(b).repl)} of gear · ${{ coi: 'certificate', hold: 'card hold', waiver: 'waiver' }[p.mode]}</div></div><span class="pill ${p.ok ? 'good' : 'warn'}">${p.ok ? 'Covered' : 'Not yet'}</span></div>`; }).join('') : '<div class="empty"><b>No active jobs</b></div>'}</div></div>
     </div>
   </section>`;
 }
 
 /* ---------- Storefront ---------- */
+const storeSellable = (i) => i.rec != null && i.qty > 0 && i.kit !== 'Expendables' && !/^Transport/.test(i.notes) && i.id !== 'M-GRP-072';
 function storeItems(group) {
   const g = STORE_GROUPS.find((x) => x.key === group);
-  return state.cat.items.filter((i) => g && g.cats && g.cats.includes(i.cat) && i.rec != null && i.qty > 0 && i.kit !== 'Expendables' && !/^Transport/.test(i.notes) && i.id !== 'M-GRP-072');
+  return state.cat.items.filter((i) => g && g.cats && g.cats.includes(i.cat) && storeSellable(i));
 }
+function itemPhoto(i) { const ph = photosOf(i.id)[0]; return ph ? `<button class="gphoto" data-act="item" data-id="${esc(i.id)}" aria-label="Photos of ${esc(i.name)}"><img src="${esc(ph.url)}" alt="" loading="lazy"></button>` : ''; }
+function kitCover(p) { return photosOf(p.id)[0] || (p.ids.map((id) => photosOf(id)[0]).find(Boolean)) || null; }
+function kitPhoto(p) { const ph = kitCover(p); return ph ? `<div class="gphoto"><img src="${esc(ph.url)}" alt="" loading="lazy"></div>` : ''; }
+function kitThumb(p) { const ph = kitCover(p); return ph ? `<span class="icon-tile photo"><img src="${esc(ph.thumb || ph.url)}" alt="" loading="lazy"></span>` : tile('Kit'); }
 function storeDatesOk() { const f = state.store.form; return f.pickup && f.ret && f.pickup <= f.ret; }
 function kitFree(p) { const f = state.store.form; if (!storeDatesOk()) return null; return p.ids.every((id) => { const it = state.cat.byId[id]; return !it || freeOn(id, f.pickup, f.ret) >= Math.max(1, it.qty); }); }
 function vStore() {
@@ -1008,10 +1241,10 @@ function vStore() {
   const wk = dOk && S.weekendSpecial && weekendEligible({ pickup: f.pickup, returnDate: f.ret });
   const cards = st.group === 'packages'
     ? state.cat.packages.map((p) => { const op = crewFor(p.id); const c = st.cart.find((x) => x.key === p.id); const free = kitFree(p); return `<div class="gcard ${c ? 'in' : ''}" style="cursor:default"><div class="row between">${tile('Kit')}${free == null ? '' : free ? '<span class="pill good">Free those dates</span>' : '<span class="pill warn">Partly booked</span>'}</div>
-        <div><h3>${esc(p.name)}</h3><div class="muted small">${esc(p.contents)}</div></div>
+        ${kitPhoto(p)}<div><h3>${esc(p.name)}</h3><div class="muted small">${esc(p.contents)}</div></div>
         ${op ? `<label class="check small"><input type="checkbox" data-storecrew="${p.id}" ${c && c.crew ? 'checked' : ''} ${c ? '' : 'disabled'}> Add a ${esc(op.role)} · +${money(op.rate)}/day</label>` : ''}
         <div class="foot2"><span class="price">${money(p.day)}<small> /day</small></span><button class="btn sm ${c ? '' : 'dark'}" data-act="cart" data-k="${p.id}">${c ? 'Added' : 'Add'}</button></div></div>`; }).join('')
-    : storeItems(st.group).map((i) => `<div class="gcard ${inCart(i.id) ? 'in' : ''}" style="cursor:default"><div class="row between">${tile(i.cat)}${dOk ? availPill(i, f.pickup, f.ret) : ''}</div><div><h3>${esc(i.name)}</h3><div class="muted small">${i.qty > 1 ? `${i.qty} available` : ''}</div></div><div class="foot2"><span class="price">${money(i.rec)}<small> /day${perLens(i) ? ' per lens' : i.qty > 1 ? ' each' : ''}</small></span><button class="btn sm ${inCart(i.id) ? '' : 'dark'}" data-act="cart" data-k="${i.id}">${inCart(i.id) ? 'Added' : 'Add'}</button></div></div>`).join('');
+    : storeItems(st.group).map((i) => `<div class="gcard ${inCart(i.id) ? 'in' : ''}" style="cursor:default">${itemPhoto(i)}<div class="row between">${photosOf(i.id).length ? '<span></span>' : tile(i.cat)}${dOk ? availPill(i, f.pickup, f.ret) : ''}</div><div><h3><button class="linkish" data-act="item" data-id="${esc(i.id)}">${esc(i.name)}</button></h3><div class="muted small">${i.qty > 1 ? `${i.qty} available` : ''}</div></div><div class="foot2"><span class="price">${money(i.rec)}<small> /day${perLens(i) ? ' per lens' : i.qty > 1 ? ' each' : ''}</small></span><button class="btn sm ${inCart(i.id) ? '' : 'dark'}" data-act="cart" data-k="${i.id}">${inCart(i.id) ? 'Added' : 'Add'}</button></div></div>`).join('');
   const est = sum(st.cart, (c) => { const p = state.cat.pkgById[c.key]; const it = state.cat.byId[c.key]; const op = p && c.crew ? crewFor(p.id) : null; return p ? p.day + (op ? op.rate : 0) : it ? (it.rec || 0) * c.qty : 0; });
   const cartRows = st.cart.map((c, n) => { const p = state.cat.pkgById[c.key]; const it = state.cat.byId[c.key]; return `<div class="pick"><span class="muted small">${p ? 'Kit' : ''}</span><span>${esc(p ? p.name : it ? it.name : c.key)}${p && c.crew ? ' <span class="pill info">crewed</span>' : ''}</span><span class="row" style="gap:6px">${p ? '' : `<input type="number" min="1" max="${it ? it.qty : 1}" data-cartqty="${n}" value="${c.qty}" aria-label="Quantity" style="width:60px;padding:6px 8px">`}<button class="x" data-act="uncart" data-i="${n}" aria-label="Remove">×</button></span></div>`; }).join('');
   const repl = sum(st.cart, (c) => { const p = state.cat.pkgById[c.key]; const it = state.cat.byId[c.key]; return p ? p.repl : it ? (it.resale || 0) * c.qty : 0; });
@@ -1025,8 +1258,10 @@ function vStore() {
     ['Do you have student rates?', num(S.studentPct) ? `Yes, ${num(S.studentPct)}% off gear for students with a current school ID.` : 'Ask us.'],
     ['What if I cancel or run late?', `${S.cancelRule} ${S.lateRule}`],
   ];
+  const client = state.role === 'client'; const u = state.user || {};
+  if (client && !st.filled) { const rec = state.clientRecs[u.id] || {}; f.name = f.name || rec.name || u.name || ''; f.company = f.company || rec.company || ''; f.phone = f.phone || rec.phone || ''; st.filled = true; }
   return `<section class="view">
-    <div class="note info">A preview of the site clients see. Owners, values and internal notes never show here. Requests land in Jobs.</div>
+    ${state.role === 'admin' ? '<div class="note info">The page your clients see. Owners, values and internal notes never show here. Requests land in Jobs.</div>' : ''}
     <div class="store-hero"><span class="eyebrow" style="color:rgba(243,244,248,.7)">Camera · Lighting · Grip · New York</span><h1>${esc(S.company)}</h1><p>Modern LED lighting, cinema cameras and the crew who run them. Battery-powered kits for places generators can't go.</p>
       <div class="meta"><span>${esc(S.pickup)}</span><span>${esc(S.hours)}</span>${S.email ? `<span>${esc(S.email)}</span>` : ''}${S.afterHoursPhone ? `<span>After hours ${esc(S.afterHoursPhone)}</span>` : ''}</div></div>
     ${S.weekendSpecial ? `<div class="banner">${icon('spark', 18)} <b>Weekend special</b><span>${wk ? 'Your dates qualify: the whole rental bills as one day.' : 'Out Friday, back Monday morning, pay for one day.'}</span></div>` : ''}
@@ -1038,15 +1273,16 @@ function vStore() {
           ${st.cart.length ? `<div>${cartRows}</div>` : '<span class="muted small">Add kits or single pieces. You get a written quote with the multi-day rate, cover options and tax worked out.</span>'}
           <div class="form" style="grid-template-columns:1fr 1fr">
             <label class="field"><span>Name</span><input type="text" id="sf-name" data-sf="name" value="${esc(f.name)}"></label><label class="field"><span>Company</span><input type="text" id="sf-comp" data-sf="company" value="${esc(f.company)}"></label>
-            <label class="field"><span>Email</span><input type="email" id="sf-email" data-sf="email" value="${esc(f.email)}"></label><label class="field"><span>Phone</span><input type="tel" id="sf-phone" data-sf="phone" value="${esc(f.phone)}"></label>
+            ${client ? `<label class="field"><span>Email</span><input type="email" id="sf-email" value="${esc(u.email)}" disabled></label>` : state.role === 'admin' ? `<label class="field"><span>Email</span><input type="email" id="sf-email" data-sf="email" value="${esc(f.email)}"></label>` : ''}<label class="field"><span>Phone</span><input type="tel" id="sf-phone" data-sf="phone" value="${esc(f.phone)}"></label>
             <label class="field wide"><span>Project</span><input type="text" id="sf-proj" data-sf="project" value="${esc(f.project)}"></label>
             <label class="field wide"><span>Getting the gear</span><select id="sf-hand" data-sf="handoff">${Object.keys(HANDOFF).map((k) => `<option value="${k}" ${f.handoff === k ? 'selected' : ''}>${k === 'pickup' ? 'I’ll pick it up' : k === 'delivery' ? `Deliver it (${money(num(S.deliveryFee))} each way)` : `After-hours handoff (${money(num(S.afterHoursFee))} each way)`}</option>`).join('')}</select></label>
             <label class="field wide"><span>Covering the gear</span><select id="sf-prot" data-sf="protection"><option value="coi" ${f.protection === 'coi' ? 'selected' : ''}>I'll send an insurance certificate</option>${holdOk ? `<option value="hold" ${f.protection === 'hold' ? 'selected' : ''}>Hold the value on my card</option>` : ''}${S.waiverOn ? `<option value="waiver" ${f.protection === 'waiver' ? 'selected' : ''}>Add the damage waiver</option>` : ''}</select></label>
             ${num(S.studentPct) ? `<label class="check wide small"><input type="checkbox" id="sf-student" data-sf="student" ${f.student ? 'checked' : ''}> I'm a student (${num(S.studentPct)}% off gear)</label>` : ''}
             <label class="check wide small"><input type="checkbox" id="sf-exempt" data-sf="exempt" ${f.exempt ? 'checked' : ''}> We're making a film for sale and will send Form ST-121 (no sales tax)</label>
           </div>
-          <button class="btn grad" data-act="sendRequest" ${st.cart.length && state.dbState === 'ready' ? '' : 'disabled'}>Send request</button>
-          ${state.dbState !== 'ready' ? '<span class="faint small">Requests need the shared database, which is not available here.</span>' : ''}
+          <button class="btn grad" data-act="sendRequest" ${st.cart.length && state.dbState === 'ready' ? '' : 'disabled'}>${state.role === 'guest' && MODE !== 'claude' ? 'Sign in and send request' : 'Send request'}</button>
+          ${st.sentId && client ? `<button class="btn ghost sm" data-act="portal" data-id="${esc(st.sentId)}">See it in My bookings ${icon('arrow', 14)}</button>` : ''}
+          ${state.dbState === 'off' ? `<span class="faint small">${MODE === 'live' ? 'The booking system is not reachable right now. Try again in a minute, or email us.' : 'Requests need the shared database, which is not available here.'}</span>` : state.role === 'guest' && MODE !== 'claude' ? '<span class="faint small">You get an account so you can follow the quote, sign and pay online.</span>' : ''}
         </div></aside></div>
     <div class="card"><div class="hd"><h2 class="t">Good to know</h2></div><div class="bd flush">${faqs.map(([q, a]) => `<details class="faq"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div></div>
   </section>`;
@@ -1055,7 +1291,7 @@ function vStore() {
 /* ---------- Roadmap ---------- */
 function vRoadmap() {
   const r = state.road; const open = OPEN.filter((o) => r.showClosed || o[0] === 'Open');
-  const MISSING = SNAPSHOT.missing || [], GROWTH = SNAPSHOT.growth || [], SEQ = SNAPSHOT.sequence || [], MARKET = SNAPSHOT.market || [];
+  const MISSING = SNAP.missing || [], GROWTH = SNAP.growth || [], SEQ = SNAP.sequence || [], MARKET = SNAP.market || [];
   if (!OPEN.length && !DATA_CHECKS.length && !MISSING.length && !GROWTH.length && !MARKET.length) {
     return `<section class="view">${hero('Where this goes next', 'The <em class="s">roadmap</em>')}<div class="card"><div class="bd">${PREVIEW ? previewNote('The roadmap is hidden in the public preview: market research, open questions about the gear, the buying list and the three-phase growth plan. It is all in the private version.') : '<div class="empty"><b>No roadmap in this copy</b><span>Open questions, market notes, the buying list and the growth plan come with the full rate card.</span></div>'}</div></div></section>`;
   }
@@ -1070,7 +1306,7 @@ function vRoadmap() {
       ${open.map((o) => `<div class="q"><span class="pill ${o[0] === 'Closed' ? 'good' : o[1] === 'Blocked' || o[1] === 'Insurance' ? 'bad' : 'warn'}">${esc(o[1])}</span><div><b ${state.cat.byId[o[2]] ? `data-act="item" data-id="${o[2]}" style="cursor:pointer"` : ''}>${esc(o[3])}</b></div><div class="w">${esc(o[4])}. <b>Next:</b> ${esc(o[5])}</div></div>`).join('')}</div></div>` : ''}
     ${GROWTH.length ? `<div class="grid3">${GROWTH.map((g, i) => { const t = tally(i + 1); return `<div class="card"><div class="bd stack" style="gap:8px"><span class="eyebrow" style="margin:0">${esc(g[0])}</span><h3 class="t">${esc(g[1])}</h3><div class="mid">${money(g[3])}</div><span class="muted small">of used gear · ${money(g[2])}/month facility</span><p style="margin:0" class="small">${esc(g[5])}</p><p class="small muted" style="margin:0"><b>When:</b> ${esc(g[6])}</p><span class="small">${t.n} items to buy${t.ge ? ` · ${t.agreed} of ${t.ge} lighting and grip items agreed by ${esc(OWNERS.C.short)} and ${esc(OWNERS.S.short)}` : ''}</span></div></div>`; }).join('')}</div>` : ''}
     ${MISSING.length ? `<div class="card"><div class="hd"><h2 class="t">What to buy</h2><div class="seg" role="group" aria-label="Phase">${[1, 2, 3].map((p) => `<button data-act="phase" data-p="${p}" aria-pressed="${r.phase === p}">Phase ${p}</button>`).join('')}</div></div>
-      <div class="tbl"><table class="plain"><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Used</th><th>Picked by</th><th>Status</th></tr></thead><tbody>${miss.map((m) => `<tr><td style="min-width:240px"><b>${esc(m[1])}</b><div class="muted small">${esc(m[6])}</div></td><td class="n">${m[2]}</td><td class="n">${m[2] ? money(m[4]) : '—'}</td><td>${esc(m[7])}</td><td>${bought[slug(m[1])] ? '<span class="pill good">Bought</span>' : m[11] === 'Cut' ? '<span class="pill">Cut</span>' : GE.has(m[0]) ? `<span class="pill ${m[8] === 'Yes' && m[9] === 'Yes' ? 'good' : 'warn'}">${esc(m[11])}</span>` : '<span class="pill">Camera, no sign-off</span>'}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      <div class="tbl" tabindex="0"><table class="plain"><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Used</th><th>Picked by</th><th>Status</th></tr></thead><tbody>${miss.map((m) => `<tr><td style="min-width:240px"><b>${esc(m[1])}</b><div class="muted small">${esc(m[6])}</div></td><td class="n">${m[2]}</td><td class="n">${m[2] ? money(m[4]) : '—'}</td><td>${esc(m[7])}</td><td>${bought[slug(m[1])] ? '<span class="pill good">Bought</span>' : m[11] === 'Cut' ? '<span class="pill">Cut</span>' : GE.has(m[0]) ? `<span class="pill ${m[8] === 'Yes' && m[9] === 'Yes' ? 'good' : 'warn'}">${esc(m[11])}</span>` : '<span class="pill">Camera, no sign-off</span>'}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
     ${SEQ.length ? `<div class="card"><div class="hd"><h2 class="t">If you only read one list</h2></div><div class="bd"><ol class="seq">${SEQ.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div></div>` : ''}
   </section>`;
 }
@@ -1090,30 +1326,219 @@ function vSettings() {
         ${fld('possessionPct', 'Hold days, % of day rate', 'number')}${fld('depositPct', 'Deposit, % of total', 'number')}${fld('salesTaxPct', 'Sales tax %', 'number', 'NYC combined rate is 8.875%.')}${fld('fundPct', 'Gear fund, % of gear rental', 'number')}
         <label class="field"><span>New jobs price multi-day as</span><select id="s-rateMode" data-s="rateMode"><option value="straight" ${S.rateMode !== 'week' ? 'selected' : ''}>Every day at the day rate</option><option value="week" ${S.rateMode === 'week' ? 'selected' : ''}>Film week</option></select></label>
         ${tog('weekendSpecial', 'Weekend special', 'Out Friday, back Monday by 10:30 am, billed as one day. Most NYC houses offer this.')}
-        ${fld('studentPct', 'Student discount %', 'number')}${fld('returningPct', 'Returning-client discount %', 'number')}${fld('referralPct', 'Referral discount %', 'number')}</div></div>
+        ${fld('studentPct', 'Student discount %', 'number')}${fld('returningPct', 'Returning-client discount %', 'number')}${fld('referralPct', 'Referral discount %', 'number')}
+        ${tog('autoReturning', 'Give returning clients their discount automatically', 'Applied once when you open their next job. Take it off and it stays off.')}</div></div>
       <div class="card"><div class="hd"><h2 class="t">Handoff</h2></div><div class="bd form">
         ${fld('deliveryFee', 'Delivery, each way', 'number')}${fld('afterHoursFee', 'After-hours handoff, each way', 'number', 'Starting points from NYC houses. Set your own.')}</div></div>
       <div class="card"><div class="hd"><h2 class="t">Covering the gear</h2></div><div class="bd form">
         ${fld('glOcc', 'Renter liability, per claim', 'number')}${fld('glAgg', 'Renter liability, total', 'number')}${fld('holdMax', 'Card hold: gear worth up to', 'number')}${fld('holdMaxDays', 'Card hold: billed days up to', 'number')}
         ${tog('waiverOn', 'Offer a damage waiver', 'You carry the risk above the cap, so switch this on only once your own policy covers it.')}
         ${fld('waiverPct', 'Waiver price, % of gear rental', 'number')}${fld('waiverCapPct', 'Renter pays at most, % of value', 'number')}${fld('waiverMax', 'Waiver: gear worth up to', 'number')}${fld('lossOfUseCap', 'Loss of use cap, days', 'number')}</div></div>
+      <div class="card"><div class="hd"><h2 class="t">Getting paid</h2></div><div class="bd form">
+        ${fld('payVenmo', 'Venmo username', 'text', 'Without the @. A Venmo business profile keeps rentals off your personal feed.')}${fld('payZelle', 'Zelle email or phone')}${fld('payZelleName', 'Name Zelle shows', 'text', 'So clients know they have the right account.')}
+        ${MODE === 'claude' ? '<span class="faint small wide">Clients pay by card on the website version, once Stripe is set up.</span>' : tog('payCard', MODE === 'preview' ? 'Take cards (simulated in the preview)' : 'Take cards through Stripe', MODE === 'preview' ? 'On the live site this switches on Stripe checkout for deposits, balances and card holds.' : 'Switch this on once the Stripe step in SETUP.md is done. Clients pay deposits and balances by card, and card holds are placed and released from the job.')}
+        ${fld('payNote', 'Anything else about paying', 'area', 'Shown to clients next to the payment options.', true)}</div></div>
       <div class="card"><div class="hd"><h2 class="t">Terms</h2></div><div class="bd form">
         ${fld('governing', 'Governing law (state)')}${fld('paymentTerms', 'Payment terms', 'area', '', true)}${fld('lateRule', 'Late returns', 'area', '', true)}${fld('cancelRule', 'Cancellations', 'area', '', true)}</div></div>
+      ${teamCard()}
+      ${feedCard()}
+      <div class="card"><div class="hd"><h2 class="t">Your website</h2></div><div class="bd form">
+        ${fld('siteUrl', 'Where the site lives', 'url', `QR labels and links point here. Leave blank to use ${esc(MODE === 'claude' ? PUBLIC_SITE : (BE.siteUrl || PUBLIC_SITE))}.`, true)}</div></div>
+      ${privateCard()}
       <div class="card"><div class="hd"><h2 class="t">Rate card</h2><span class="muted small">${c.source === 'sheet' ? `Synced ${esc(fmtStamp(c.syncedAt))}` : `As of ${esc(fmtLong(c.asOf))}`}</span></div><div class="bd stack">
         <p style="margin:0" class="small">The Google Sheet stays the one place gear is typed in. Syncing reads it with your Google Sheets connection and shares the result with everyone.</p>
-        ${SNAPSHOT.sheetId ? `<div class="actions"><button class="btn dark" data-act="sync" ${state.syncing || state.dbState !== 'ready' || !state.mcpReady ? 'disabled' : ''}>${state.syncing ? 'Syncing…' : 'Sync from Google Sheet'}</button>${c.source === 'sheet' ? '<button class="btn" data-act="unsync">Use the built-in copy</button>' : ''}<a class="btn ghost" href="https://docs.google.com/spreadsheets/d/${esc(SNAPSHOT.sheetId)}/edit" target="_blank" rel="noopener">Open the sheet</a></div>` : (PREVIEW ? previewNote('The link to the Google Sheet is hidden in the public preview, so syncing is off. The rate card here is a copy with names, values and notes removed.') : '<span class="muted small">This copy of the rate card is not linked to a Google Sheet.</span>')}
+        ${MODE === 'live' && state.privateDoc ? `<label class="field"><span>Sheet link, from the Apps Script (SETUP.md)</span><input type="url" data-ext="sheetlink" value="${esc((state.secrets.sheet && state.secrets.sheet.url) || '')}" placeholder="https://script.google.com/macros/s/…/exec?key=…"><small>Only the team can see this.</small></label>` : ''}
+        ${SNAP.sheetId ? `<div class="actions"><button class="btn dark" data-act="sync" ${state.syncing || state.dbState !== 'ready' || !(state.mcpReady || MODE === 'live' && state.secrets.sheet && state.secrets.sheet.url) ? 'disabled' : ''}>${state.syncing ? 'Syncing…' : 'Sync from Google Sheet'}</button>${c.source === 'sheet' ? '<button class="btn" data-act="unsync">Use the built-in copy</button>' : ''}<a class="btn ghost" href="https://docs.google.com/spreadsheets/d/${esc(SNAP.sheetId)}/edit" target="_blank" rel="noopener">Open the sheet</a></div>` : (PREVIEW ? previewNote('The link to the Google Sheet is hidden in the public preview, so syncing is off. The rate card here is a copy with names, values and notes removed.') : '<span class="muted small">This copy of the rate card is not linked to a Google Sheet.</span>')}
         ${state.syncMsg ? `<div class="note ${/^Synced/.test(state.syncMsg) ? 'good' : 'bad'}">${esc(state.syncMsg)}</div>` : ''}
-        ${SNAPSHOT.sheetId && !state.mcpReady ? `<span class="faint small">${HOSTED ? 'Syncing needs the Google Sheets connector, which this view cannot reach.' : 'Syncing works in the claude.ai version of the desk.'}</span>` : ''}</div></div>
+        ${SNAP.sheetId && !state.mcpReady && MODE !== 'live' ? `<span class="faint small">${HOSTED ? 'Syncing needs the Google Sheets connector, which this view cannot reach.' : 'Syncing works in the claude.ai version of the desk.'}</span>` : ''}</div></div>
     </div>
   </section>`;
 }
 
+/* ---------- Client portal ---------- */
+const CLIENT_STATUS = { request: ['Request sent', 'warm'], quoted: ['Quote ready', 'info'], confirmed: ['Confirmed', 'good'], out: ['Out with you', 'live'], returned: ['Returned', ''], closed: ['All done', ''], cancelled: ['Cancelled', 'bad'] };
+function cpill(st) { const x = CLIENT_STATUS[st] || [st, '']; return `<span class="pill ${x[1]}">${esc(x[0])}</span>`; }
+function photosOf(id) { return state.photos[id] || []; }
+function thumb(it, sm) { const ph = it && photosOf(it.id)[0]; return ph ? `<span class="icon-tile photo ${sm ? 'sm' : ''}"><img src="${esc(ph.thumb || ph.url)}" alt="" loading="lazy"></span>` : tile((it && it.cat) || 'Kit', sm); }
+function vMine() {
+  if (state.dbState === 'wait') return `<section class="view">${hero('Your rentals', 'My <em class="s">bookings</em>')}<div class="card"><div class="empty"><span class="muted">Loading your bookings…</span></div></div></section>`;
+  const one = state.portal.id && state.bookings.find((x) => x.id === state.portal.id);
+  if (one) return portalJob(one);
+  const list = state.bookings.slice().sort((a, b) => String(b.pickup || '').localeCompare(String(a.pickup || '')));
+  return `<section class="view">
+    ${hero('Your rentals', 'My <em class="s">bookings</em>', 'Quotes, agreements, payments and paperwork for everything you rent from us.', `<button class="btn grad" data-act="nav" data-v="storefront">${icon('plus', 16)} Rent gear</button>`)}
+    <div class="card">${list.length ? `<div class="bd flush">${list.map((x) => { const todo = clientTodo(x); const bill = x.bill || {};
+      return `<div class="li click job-li" data-act="portal" data-id="${esc(x.id)}" tabindex="0" role="button">${tile('Kit', true)}<div class="grow"><div class="ttl">${esc(x.project || 'Gear rental')}</div><div class="sub">${esc(x.ref)} · ${esc(fmtDay(x.pickup))} to ${esc(fmtDay(x.returnDate))}${todo.length ? ` · <b class="todo">${esc(todo[0].t)}${todo.length > 1 ? ` and ${todo.length - 1} more` : ''}</b>` : ''}</div></div><div class="meta">${cpill(x.status)}<b class="num tot">${bill.total ? money(bill.total) : '—'}</b></div></div>`; }).join('')}</div>`
+      : `<div class="empty"><b>No bookings yet</b><span>Pick your dates and gear on the storefront and send a request. We reply with a written quote.</span><div class="actions" style="justify-content:center"><button class="btn grad" data-act="nav" data-v="storefront">Browse gear</button></div></div>`}</div>
+  </section>`;
+}
+function portalJob(b) {
+  const bill = b.bill || null; const todo = clientTodo(b); const S = state.settings;
+  const lines = includedLines(b).map((ln) => { const it = state.cat.byId[ln.id] || { id: ln.id, name: ln.id, cat: 'Kit' }; return `<div class="gear-row">${thumb(it, true)}<div class="grow"><div class="ttl">${esc(it.name)}</div><div class="sub">${num(ln.qty) > 1 ? '× ' + num(ln.qty) : 'One'}</div></div></div>`; }).join('');
+  const crew = (b.crew || []).filter((c) => inTier(c.tier || 'C', b.budget || 'A')).map((c) => `<div class="gear-row"><span class="icon-tile sm t-Sound">${icon('people', 17)}</span><div class="grow"><div class="ttl">${esc(c.role)}</div><div class="sub">${plural(num(c.people), 'person', 'people')} · ${plural(num(c.days), 'day')}</div></div></div>`).join('');
+  const h = b.handoff || {};
+  return `<section class="view portal">
+    <div class="hero"><div style="min-width:0;flex:1 1 340px"><button class="btn ghost sm" data-act="portal" data-id="">${icon('back', 14)} All bookings</button>
+      <div class="eyebrow" style="margin-top:12px">${esc(b.ref)}</div><h1>${esc(b.project || 'Gear rental')}</h1><p>${esc(fmtDay(b.pickup))} to ${esc(fmtDay(b.returnDate))} · ${cpill(b.status)}</p></div>
+      ${bill ? `<div class="head-total"><div class="big">${money(bill.total)}</div><div class="muted small">${b.tax && b.tax.exempt ? 'no sales tax' : 'incl. sales tax'}</div></div>` : ''}</div>
+    ${todo.length ? `<div class="card glow"><div class="hd"><h2 class="t">To do</h2><span class="muted small">${plural(todo.length, 'thing')}</span></div><div class="bd checklist todo-list">${todo.map((x) => `<div><span>${esc(x.t)}</span><a href="#p-${x.k}" data-act="jump" data-to="p-${x.k}">Go ${icon('arrow', 13)}</a></div>`).join('')}</div></div>` : b.status === 'confirmed' ? '<div class="note good">You are all set. See you at pickup.</div>' : ''}
+    <div class="split"><div class="stack">
+      <div class="card" id="p-quote"><div class="hd"><h2 class="t">${b.status === 'request' ? 'Your request' : 'Your quote'}</h2>${bill ? `<span class="muted small">${esc(BUDGET[bill.budget || 'A'].name)}</span>` : ''}</div>
+        <div class="bd flush">${lines || '<div class="empty"><span>No gear on this one yet.</span></div>'}${crew}</div>
+        <div class="bd">${bill && bill.rows ? rowsHtml(bill.rows) : `<div class="note">We will send a written quote with the multi-day rate, cover options and tax worked out, usually within a day.</div>`}
+        ${b.status === 'request' ? `<div class="actions" style="margin-top:10px"><button class="btn ghost sm" data-act="clientCancel" data-id="${esc(b.id)}">Cancel this request</button></div>` : ''}</div></div>
+      ${portalAgreement(b)}
+      ${portalCover(b)}
+      ${b.tax && b.tax.exempt ? portalTax(b) : ''}
+    </div>
+    <aside class="stack sticky">
+      ${portalPay(b)}
+      <div class="card"><div class="hd"><h2 class="t">When and where</h2></div><div class="bd stack" style="gap:8px">
+        <span class="small">${icon(h.out === 'delivery' ? 'truck' : h.out === 'afterhours' ? 'moon' : 'store', 15)} <b>Out</b> ${esc(fmtLong(b.pickup))}${b.pickupTime ? ' · ' + esc(fmtTime(b.pickupTime)) : ''}<br><span class="muted">${esc(h.out === 'delivery' ? 'We deliver' + (h.address ? ' to ' + h.address : '') : h.out === 'afterhours' ? 'After-hours handoff, by arrangement' : S.pickup)}</span></span>
+        <span class="small">${icon(h.back === 'delivery' ? 'truck' : h.back === 'afterhours' ? 'moon' : 'store', 15)} <b>Back</b> ${esc(fmtLong(b.returnDate))}${b.returnTime ? ' · by ' + esc(fmtTime(b.returnTime)) : ''}</span>
+        ${b.prepDate ? `<span class="small">Prep visit ${esc(fmtLong(b.prepDate))}</span>` : ''}
+        ${calButtons(b)}</div></div>
+      <div class="card"><div class="hd"><h2 class="t">Questions?</h2></div><div class="bd small stack" style="gap:6px">${S.email ? `<a href="mailto:${esc(S.email)}?subject=${encodeURIComponent(b.ref)}">${esc(S.email)}</a>` : ''}${S.phone ? `<span>${esc(S.phone)}</span>` : ''}${S.afterHoursPhone ? `<span class="muted">After hours ${esc(S.afterHoursPhone)}</span>` : ''}<span class="muted">Quote ${esc(b.ref)} when you get in touch.</span></div></div>
+    </aside></div>
+  </section>`;
+}
+function portalAgreement(b) {
+  const ct = b.contract || {};
+  if (!['sent', 'signed'].includes(ct.status) || !ct.html) return `<div class="card" id="p-sign"><div class="hd"><h2 class="t">Rental agreement</h2><span class="pill">${b.status === 'request' ? 'Comes with the quote' : 'Being prepared'}</span></div><div class="bd"><span class="muted small">You read and sign it right here.</span></div></div>`;
+  const signed = ct.status === 'signed';
+  return `<div class="card" id="p-sign"><div class="hd"><h2 class="t">Rental agreement</h2><span class="pill ${signed ? 'good' : 'info'}">${signed ? 'Signed' : 'Ready to sign'}</span></div>
+    <div class="bd stack"><div class="paper portal-paper" tabindex="0" aria-label="The rental agreement">${ct.html}${signed && ct.signature ? sigBlock(ct) : ''}</div>
+    ${signed ? `<div class="note good">${icon('check', 16)} Signed by ${esc(ct.signer)} on ${esc(fmtLong(ct.signedOn))}.</div><div class="actions"><button class="btn sm" data-act="dlSigned" data-id="${esc(b.id)}">Download a copy</button></div>` : signForm(b)}</div></div>`;
+}
+function signForm(b) {
+  const sg = state.sign;
+  return `<div class="sign-form stack"><label class="field"><span>Your full name</span><input type="text" id="sg-name" data-sign="name" value="${esc(sg.name)}" autocomplete="name"></label>
+    <div class="field"><span id="sigLabel">Sign in the box</span><div class="sigpad-wrap"><canvas id="sigPad" class="sigpad" role="img" aria-labelledby="sigLabel"></canvas><button type="button" class="btn ghost sm sig-clear" data-act="sigClear">Clear</button></div><small>With a finger, a stylus or the mouse.</small></div>
+    <label class="check small"><input type="checkbox" id="sg-consent" data-sign="consent" ${sg.consent ? 'checked' : ''}><span>I have read the agreement. I agree to sign it electronically, and that my electronic signature counts the same as one on paper.</span></label>
+    <button class="btn grad" data-act="clientSign" data-id="${esc(b.id)}" ${sg.busy ? 'disabled' : ''}>${sg.busy ? 'Signing…' : `${icon('pen', 16)} Sign the agreement`}</button></div>`;
+}
+function uploadForm(kind, bookingId) {
+  const u = state.upload; const f = u[kind]; const busy = u.busy === kind;
+  return `<div class="upl"><label class="field"><span>${kind === 'coi' ? 'Your certificate, as a PDF or photo' : 'Your signed ST-121, as a PDF or photo'}</span><input type="file" accept="application/pdf,image/*" data-upfile="${kind}">${f ? `<small>Chosen: ${esc(f.name)}</small>` : ''}</label>
+    ${kind === 'coi' ? `<label class="field"><span>Policy expires</span><input type="date" data-upexp="${kind}" value="${esc(u[kind + 'Exp'] || '')}"></label>` : ''}
+    <button class="btn dark sm" data-act="uploadDoc" data-kind="${kind}" data-id="${esc(bookingId || '')}" ${busy ? 'disabled' : ''}>${busy ? 'Sending…' : 'Send it'}</button></div>`;
+}
+const COI_CLIENT = { none: ['Needed', 'warn'], requested: ['Needed', 'warn'], received: ['Received, checking', 'info'], verified: ['Accepted', 'good'], rejected: ['Needs another look', 'bad'] };
+function portalCover(b) {
+  const mode = b.protection || 'coi'; const S = state.settings; const bill = b.bill || {}; const coi = b.coi || {};
+  if (mode === 'waiver') return `<div class="card" id="p-coi"><div class="hd"><h2 class="t">Damage waiver</h2><span class="pill ${b.waiver && b.waiver.accepted ? 'good' : 'info'}">${b.waiver && b.waiver.accepted ? 'Accepted' : 'Accepted when you sign'}</span></div><div class="bd small">The waiver caps what you pay for accidental damage at ${num(S.waiverCapPct)}% of the gear's value. It does not cover theft or loss. The details are in the agreement.</div></div>`;
+  if (mode === 'hold') return `<div class="card" id="p-coi"><div class="hd"><h2 class="t">Card hold</h2><span class="pill ${b.hold && b.hold.placed ? 'good' : 'warn'}">${b.hold && b.hold.placed ? 'Placed' : 'Needed before pickup'}</span></div><div class="bd small">Instead of an insurance certificate, we hold ${bill.repl ? money(bill.repl) : 'the gear’s value'} on your card while the gear is out, and release it when everything is back. Place it under Payments${b.hold && b.hold.placed ? '' : ' in the week before pickup'}.</div></div>`;
+  const st = COI_CLIENT[coi.status || 'none'] || COI_CLIENT.none;
+  return `<div class="card" id="p-coi"><div class="hd"><h2 class="t">Insurance certificate</h2><span class="pill ${st[1]}">${st[0]}</span></div>
+    <div class="bd stack"><span class="small">Your policy needs to cover rented equipment worth at least <b>${bill.repl ? money(bill.repl) : 'the value on your quote'}</b>, carry ${money(num(S.glOcc))} of general liability, name ${esc(S.legalName || S.company)} as additional insured and loss payee, and run through ${esc(fmtLong(b.returnDate))}. No policy? A broker can usually bind short-term production cover the same day.</span>
+    ${coi.file ? `<div class="doc-row">${icon('doc', 16)}<span class="grow small">Your certificate${coi.expires ? ` · expires ${esc(fmtDay(coi.expires))}` : ''}</span><button class="btn ghost sm" data-act="openDoc" data-path="${esc(coi.file)}">Open</button></div>` : ''}
+    ${coi.status !== 'verified' && b.status !== 'request' ? uploadForm('coi', b.id) : ''}</div></div>`;
+}
+function portalTax(b) {
+  const t = b.tax || {};
+  return `<div class="card" id="p-tax"><div class="hd"><h2 class="t">No sales tax: ST-121</h2><span class="pill ${t.cert ? 'good' : t.certFile ? 'info' : 'warn'}">${t.cert ? 'On file' : t.certFile ? 'Received, checking' : 'Needed'}</span></div>
+    <div class="bd stack"><span class="small">New York lets productions rent gear tax-free when it's used to make a film for sale. Fill in and sign Form ST-121 (<a href="https://www.tax.ny.gov/pdf/current_forms/st/st121_fill_in.pdf" target="_blank" rel="noopener">get the form</a>) and send it here before pickup, or sales tax applies.</span>
+    ${t.certFile ? `<div class="doc-row">${icon('doc', 16)}<span class="grow small">Your ST-121</span><button class="btn ghost sm" data-act="openDoc" data-path="${esc(t.certFile)}">Open</button></div>` : ''}
+    ${!t.cert && !t.certFile ? uploadForm('st121', b.id) : ''}</div></div>`;
+}
+const DOC_KIND = { coi: 'Insurance certificate', st121: 'ST-121 exempt use certificate' };
+function docExpiry(d) { if (!d.expires) return ''; const left = diffDays(todayStr(), d.expires); return left < 0 ? `<span class="pill bad">Expired ${esc(fmtDay(d.expires))}</span>` : left <= 30 ? `<span class="pill warn">Expires ${esc(fmtDay(d.expires))}</span>` : `<span class="pill">Expires ${esc(fmtDay(d.expires))}</span>`; }
+function vAccount() {
+  const u = state.user || {}; const rec = state.clientRecs[u.id] || {};
+  const f = state.profile || (state.profile = { name: rec.name || u.name || '', company: rec.company || '', phone: rec.phone || '' });
+  const docs = (rec.docs || []).slice().sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  return `<section class="view">
+    ${hero('Your account', 'Details and <em class="s">documents</em>', 'Keep an insurance certificate and ST-121 on file and we can use them for every rental.')}
+    <div class="grid2">
+      <div class="card"><div class="hd"><h2 class="t">You</h2></div><div class="bd form">
+        <label class="field"><span>Name</span><input type="text" id="pf-name" data-profile="name" value="${esc(f.name)}" autocomplete="name"></label>
+        <label class="field"><span>Company</span><input type="text" id="pf-company" data-profile="company" value="${esc(f.company)}" autocomplete="organization"></label>
+        <label class="field"><span>Phone</span><input type="tel" id="pf-phone" data-profile="phone" value="${esc(f.phone)}" autocomplete="tel"></label>
+        <label class="field"><span>Email</span><input type="email" value="${esc(u.email)}" disabled></label>
+        <div class="actions wide"><button class="btn dark" data-act="saveProfile">Save</button><button class="btn ghost" data-act="signOut">${icon('logout', 15)} Sign out</button></div></div></div>
+      <div class="card"><div class="hd"><h2 class="t">On file</h2><span class="muted small">${plural(docs.length, 'document')}</span></div><div class="bd stack">
+        ${docs.length ? docs.map((d) => `<div class="doc-row">${icon('doc', 16)}<span class="grow small"><b>${esc(DOC_KIND[d.kind] || d.kind)}</b><br><span class="muted">${esc(d.name || '')} · ${esc(fmtDay(String(d.at || '').slice(0, 10)))}</span></span>${docExpiry(d)}<span class="pill ${d.status === 'ok' ? 'good' : d.status === 'rejected' ? 'bad' : ''}">${d.status === 'ok' ? 'Accepted' : d.status === 'rejected' ? 'Not accepted' : 'Checking'}</span>${d.file ? `<button class="btn ghost sm" data-act="openDoc" data-path="${esc(d.file)}">Open</button>` : ''}</div>`).join('') : '<span class="muted small">Nothing yet.</span>'}
+        <details><summary class="small" style="cursor:pointer;font-weight:600">Add an insurance certificate</summary><div style="margin-top:10px">${uploadForm('coi', '')}</div></details>
+        <details><summary class="small" style="cursor:pointer;font-weight:600">Add an ST-121</summary><div style="margin-top:10px">${uploadForm('st121', '')}</div></details>
+      </div></div>
+    </div>
+  </section>`;
+}
+
+function teamCard() {
+  if (MODE === 'claude') return '';
+  const me = normKey(state.user && state.user.email); const a = state.teamAdd;
+  return `<div class="card"><div class="hd"><h2 class="t">Team</h2><span class="muted small">${plural(state.team.length, 'person', 'people')}</span></div><div class="bd stack">
+    <p class="small muted" style="margin:0">Everyone listed here sees the whole desk once they sign up with this email and confirm it. Everyone else who signs up is a client.${MODE === 'preview' ? ' In the preview this list is only an example.' : ''}</p>
+    ${state.team.length ? `<div>${state.team.map((x) => `<div class="pick"><span class="av sm" aria-hidden="true">${esc(initials(x.name || x.email))}</span><span class="grow">${esc(x.name || x.email)}${x.name ? `<br><span class="muted small">${esc(x.email)}</span>` : ''}${normKey(x.email) === me ? ' <span class="pill">you</span>' : ''}</span>${state.team.length > 1 ? `<button class="x" data-act="teamRemove" data-e="${esc(x.email)}" aria-label="Remove ${esc(x.email)}">×</button>` : ''}</div>`).join('')}</div>` : ''}
+    <div class="row wrap" style="gap:8px"><input type="email" data-ext="teamadd" data-k="email" value="${esc(a.email)}" placeholder="partner@example.com" aria-label="Email" style="flex:2;min-width:180px"><input type="text" data-ext="teamadd" data-k="name" value="${esc(a.name)}" placeholder="Name" aria-label="Name" style="flex:1;min-width:120px"><button class="btn dark" data-act="teamAdd">Add</button></div></div></div>`;
+}
+function feedCard() {
+  if (MODE === 'claude') return '';
+  const tok = state.secrets.calendar && state.secrets.calendar.token;
+  const url = tok && BE.feedUrl ? BE.feedUrl(tok) : '';
+  return `<div class="card"><div class="hd"><h2 class="t">Calendar link</h2></div><div class="bd stack">
+    <p class="small muted" style="margin:0">Every pickup and return on your own calendar, kept up to date, with a reminder the day before each return. Anyone with the link can see the jobs, so keep it to the team.</p>
+    ${MODE === 'preview' ? '<span class="faint small">The live site makes the link. Here, download the schedule instead.</span>' : url ? `<div class="copyrow"><input type="text" value="${esc(url)}" readonly aria-label="Calendar link" style="flex:1;min-width:0"><button class="btn sm" data-act="copyText" data-t="${esc(url)}">Copy</button></div>
+      <span class="faint small">Google Calendar: Other calendars, +, From URL. Apple Calendar: File, New Calendar Subscription. Google refreshes it every few hours.</span><div class="actions"><button class="btn ghost sm" data-act="feedMake">Make a new link</button></div>` : '<div class="actions"><button class="btn dark sm" data-act="feedMake">Make the link</button></div>'}
+    <div class="actions"><button class="btn ghost sm" data-act="icsAll">${icon('calendar', 14)} Download every job (.ics)</button></div></div></div>`;
+}
+function privateCard() {
+  if (MODE !== 'live') return '';
+  const p = state.privateDoc; let meta = null; try { meta = p && JSON.parse(p.payload); } catch (_) { meta = null; }
+  return `<div class="card"><div class="hd"><h2 class="t">Full rate card</h2><span class="pill ${p ? 'good' : 'warn'}">${p ? 'Loaded' : 'Not loaded'}</span></div><div class="bd stack">
+    <p class="small muted" style="margin:0">Owner names, what each piece is worth, notes, the buying list and research. Only the team can read it; the storefront shows names, quantities and day rates.</p>
+    ${p ? `<span class="small">As of ${esc(fmtLong(meta && meta.asOf))} · ${meta && meta.rows ? plural(meta.rows.length, 'item') : ''}${p.loadedAt ? ' · loaded ' + esc(fmtStamp(p.loadedAt)) : ''}</span>` : '<span class="small">Load <b>rate-card.private.json</b> (made by tools/export-private.js, see SETUP.md).</span>'}
+    <label class="btn sm ${p ? '' : 'dark'}" style="position:relative;overflow:hidden">${p ? 'Load a newer copy' : 'Load it'}<input type="file" accept="application/json,.json" data-ext="privatefile" style="position:absolute;inset:0;opacity:0;cursor:pointer" aria-label="Full rate card file"></label></div></div>`;
+}
+
 /* ---------- Drawers ---------- */
+function focusFirst() { setTimeout(() => { const el = $('#drawerHost input:not([disabled]), #drawerHost button.option-btn'); if (el) el.focus(); }, 30); }
+function authMsg(e) {
+  const m = (e && e.message) || '';
+  if (/invalid login/i.test(m)) return 'That email and password don’t match. Try again, or reset your password.';
+  if (/not confirmed/i.test(m)) return 'Confirm your email first: open the link we sent you.';
+  if (/already registered|already exists/i.test(m)) return 'There’s already an account with that email. Sign in instead.';
+  if (/rate limit|too many|security purposes/i.test(m)) return 'Too many tries for now. Wait a minute, then try again.';
+  return m || 'That didn’t work. Try again.';
+}
+function authDrawer() {
+  const a = state.auth;
+  const head = `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer auth" role="dialog" aria-modal="true" aria-labelledby="authTitle"><button class="btn ghost sm close" data-act="closeDrawer">Close</button>`;
+  const keep = a.then === 'sendRequest' ? '<div class="note info">Your picks stay in the basket.</div>' : '';
+  if (MODE === 'preview') return head + `<h2 id="authTitle">Look around as someone else</h2><p class="muted" style="margin:0">The preview has no real accounts. On the live site, clients sign up with their email and the team signs in to the whole desk. Pick who to be:</p>${keep}
+    <div class="stack">${[['client', 'A client', 'Request gear, read and sign the quote, pay, and send insurance.'], ['admin', 'An owner', 'The whole desk: jobs, gear, money, clients and settings.'], ['guest', 'A visitor', 'Someone browsing the storefront without signing in.']].map(([k, t, d]) => `<button class="option-btn" data-act="demoRole" data-r="${k}" aria-pressed="${state.role === k}"><b>${t}</b><span>${d}</span></button>`).join('')}</div></aside>`;
+  const titles = { in: 'Sign in', up: 'Create your account', reset: 'Reset your password', newpw: 'Choose a new password', check: 'Check your email' };
+  const body = a.mode === 'check' ? `<p style="margin:0">We sent a link to <b>${esc(a.email)}</b>. Open it on this device to carry on.</p><button class="btn" data-act="authMode" data-m="in">Back to sign in</button>`
+    : `<form class="stack" novalidate>
+      ${a.mode === 'up' ? `<label class="field"><span>Your name</span><input type="text" id="au-name" data-auth="name" value="${esc(a.name)}" autocomplete="name"></label>` : ''}
+      ${a.mode !== 'newpw' ? `<label class="field"><span>Email</span><input type="email" id="au-email" data-auth="email" value="${esc(a.email)}" autocomplete="email" required></label>` : ''}
+      ${a.mode !== 'reset' ? `<label class="field"><span>${a.mode === 'newpw' ? 'New password' : 'Password'}</span><input type="password" id="au-pw" data-auth="password" value="${esc(a.password)}" autocomplete="${a.mode === 'in' ? 'current-password' : 'new-password'}" required>${a.mode !== 'in' ? '<small>At least 8 characters.</small>' : ''}</label>` : ''}
+      ${a.msg ? `<div class="note ${a.tone || 'bad'}" role="alert">${esc(a.msg)}</div>` : ''}
+      <button class="btn grad" type="submit" data-act="authSubmit" ${a.busy ? 'disabled' : ''}>${a.busy ? 'One moment…' : { in: 'Sign in', up: 'Create account', reset: 'Send the reset link', newpw: 'Save the new password' }[a.mode]}</button></form>
+    <div class="auth-alt small">${a.mode === 'in' ? '<a href="#" data-act="authMode" data-m="up">New here? Create an account</a><a href="#" data-act="authMode" data-m="reset">Forgot your password?</a><a href="#" data-act="authMagic">Email me a sign-in link instead</a>' : a.mode === 'up' ? '<a href="#" data-act="authMode" data-m="in">Already have an account? Sign in</a>' : '<a href="#" data-act="authMode" data-m="in">Back to sign in</a>'}</div>
+    ${a.mode === 'up' ? '<p class="faint small" style="margin:0">We use your email for quotes, agreements and receipts. Nothing else.</p>' : ''}`;
+  return head + `<h2 id="authTitle">${titles[a.mode] || 'Sign in'}</h2>${keep}${body}</aside>`;
+}
+function acctDrawer() {
+  const u = state.user || {};
+  return `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="Account"><button class="btn ghost sm close" data-act="closeDrawer">Close</button>
+    <div class="row"><span class="av lg" aria-hidden="true">${esc(initials(u.name || u.email))}</span><div><h2>${esc(u.name || 'Your account')}</h2><div class="muted small">${esc(u.email || '')}</div></div></div>
+    <div><span class="pill ${state.role === 'admin' ? 'good' : ''}">${state.role === 'admin' ? 'On the team: the whole desk' : 'Client account'}</span></div>
+    <div class="stack">${state.role === 'client' ? '<button class="btn" data-act="nav" data-v="mine">My bookings</button><button class="btn" data-act="nav" data-v="account">Details and documents</button>' : '<button class="btn" data-act="nav" data-v="settings">Settings</button>'}
+      <button class="btn ghost" data-act="signOut">${icon('logout', 15)} Sign out</button>
+      ${MODE === 'preview' ? '<button class="btn ghost sm" data-act="authOpen">Look around as someone else</button>' : ''}</div></aside>`;
+}
 function renderDrawer() {
   const host = $('#drawerHost'); const d = state.drawer;
   if (!d) { host.innerHTML = ''; return; }
   if (d.kind === 'pick') { host.innerHTML = pickDrawer(); return; }
+  if (d.kind === 'auth') { host.innerHTML = authDrawer(); return; }
+  if (d.kind === 'acct') { host.innerHTML = acctDrawer(); return; }
+  if (d.kind === 'scan' && $('#scanVideo')) { const l = $('#scanList'); if (l) l.innerHTML = scanList(); return; }
+  if (d.kind in EXTRA_DRAWERS) { host.innerHTML = EXTRA_DRAWERS[d.kind](d); return; }
   const it = state.cat.byId[d.id]; if (!it) { state.drawer = null; host.innerHTML = ''; return; }
+  if (state.role !== 'admin') { host.innerHTML = publicItemDrawer(it); return; }
   const t = todayStr(); const u = usage(it.id, t, addDays(t, 60));
   const pk = state.cat.packages.filter((p) => p.ids.includes(it.id));
   const qs = (OPEN_BY_ITEM[it.id] || []).map((o) => ({ t: `${o[1]}: ${o[4]}`, d: o[5] })).concat(DATA_CHECKS.filter((x) => x.id === it.id).map((x) => ({ t: x.title, d: x.text })));
@@ -1122,6 +1547,7 @@ function renderDrawer() {
     <button class="btn ghost sm close" data-act="closeDrawer">Close</button>
     <div class="row">${tile(it.cat)}<div class="grow"><div class="muted small">${esc(CAT_LABEL[it.cat] || it.cat)}${it.kit ? ' · ' + esc(it.kit) : ''}</div>${ownerTag(it.own, true)}</div></div>
     <h2>${esc(it.name)}</h2>
+    ${photoGallery(it.id, true, it.name)}
     ${it.rec != null ? `<div><span class="big">${money(it.rec)}</span><span class="muted"> /day${perLens(it) ? ' per lens' : ''}</span>${it.lo != null && it.hi != null ? `<div class="muted small" style="margin-top:6px">Market runs ${money(it.lo)} to ${money(it.hi)} a day. Quote from this rate and discount on purpose.</div>` : ''}</div>` : `<div class="note">${esc(it.basis || 'Included in the kit rate.')}</div>`}
     <dl class="kv"><dt>In the pool</dt><dd>${it.qty}</dd>${it.resale != null ? `<dt>Worth</dt><dd>${money(it.resale)}${it.qty > 1 ? ` each · ${money(it.resale * it.qty)}` : ''}</dd>` : ''}${it.payback != null ? `<dt>Pays for itself in</dt><dd>${plural(it.payback, 'rental day')}</dd>` : ''}${it.rent ? `<dt>How often it goes out</dt><dd>${esc(it.rent)}</dd>` : ''}${NOMINAL_WATTS[it.id] ? `<dt>Power</dt><dd>${NOMINAL_WATTS[it.id].toLocaleString('en-US')} W nominal</dd>` : ''}<dt>Next 60 days</dt><dd>${u.who.length ? u.who.map((w) => esc(w.b.project || w.b.ref)).join(', ') : 'Free'}</dd><dt>ID</dt><dd class="faint">${esc(it.id)}</dd></dl>
     ${previewNote('Its value, market price range, notes and where the rate came from are hidden in the public preview.')}
@@ -1129,7 +1555,21 @@ function renderDrawer() {
     ${it.notes && !/^(RATE IS PER LENS\.|Transport, not billed\.)$/.test(it.notes) ? `<div><div class="eyebrow">Notes</div><p style="margin:0">${esc(it.notes)}</p></div>` : ''}
     ${it.basis && it.rec != null ? `<div><div class="eyebrow">Where the rate came from</div><p style="margin:0" class="muted">${esc(it.basis)}</p></div>` : ''}
     ${pk.length ? `<div><div class="eyebrow">In these kits</div><div class="chips">${pk.map((p) => `<span class="pill">${esc(p.name)}</span>`).join('')}</div></div>` : ''}
+    ${it.qty > 0 ? gearInfo(it) : ''}
     ${it.rec != null && it.qty > 0 && state.dbState === 'ready' && !state.readOnly ? `<div class="stack" style="gap:8px"><div class="eyebrow" style="margin:0">Add to a job</div><div class="row"><select id="dr-target" class="grow" aria-label="Job">${targets.map((b) => `<option value="${b.id}">${esc(b.project || b.ref)} · ${esc(fmtDay(b.pickup))}</option>`).join('')}<option value="__new">A new job</option></select><button class="btn dark" data-act="drawerAdd" data-id="${it.id}">Add</button></div></div>` : ''}
+  </aside>`;
+}
+function publicItemDrawer(it) {
+  const pk = state.cat.packages.filter((p) => p.ids.includes(it.id)); const inCart = state.store.cart.some((c) => c.key === it.id);
+  return `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(it.name)}">
+    <button class="btn ghost sm close" data-act="closeDrawer">Close</button>
+    <div class="row">${thumb(it)}<div class="grow"><div class="muted small">${esc(CAT_LABEL[it.cat] || it.cat)}</div></div></div>
+    <h2>${esc(it.name)}</h2>
+    ${photoGallery(it.id, false, it.name)}
+    ${it.rec != null ? `<div><span class="big">${money(it.rec)}</span><span class="muted"> /day${perLens(it) ? ' per lens' : ''}</span></div>` : '<div class="note">Rented as part of a kit.</div>'}
+    <dl class="kv"><dt>How many we have</dt><dd>${it.qty}</dd>${NOMINAL_WATTS[it.id] ? `<dt>Power</dt><dd>${NOMINAL_WATTS[it.id].toLocaleString('en-US')} W</dd>` : ''}</dl>
+    ${pk.length ? `<div><div class="eyebrow">Also in these kits</div><div class="chips">${pk.map((p) => `<span class="pill">${esc(p.name)}</span>`).join('')}</div></div>` : ''}
+    ${storeSellable(it) ? `<button class="btn ${inCart ? '' : 'dark'}" data-act="cart" data-k="${esc(it.id)}">${inCart ? 'In your request' : 'Add to your request'}</button>` : ''}
   </aside>`;
 }
 function pickDrawer() {
@@ -1148,6 +1588,382 @@ function pickDrawer() {
 function pickList(list, onJob, b) {
   if (!list.length) return '<div class="empty"><b>Nothing matches</b></div>';
   return list.map((i) => { const free = b ? freeOn(i.id, b.pickup, b.returnDate, b.id) : i.qty; return `<div class="pick">${tile(i.cat, true)}<div class="grow"><div style="font-weight:600">${esc(i.name)}</div><div class="muted small">${money(i.rec)}/day${perLens(i) ? ' per lens' : ''} · ${free <= 0 ? '<span class="flag bad">booked those dates</span>' : `${free} of ${i.qty} free`}</div></div><button class="btn sm ${onJob.has(i.id) ? '' : 'dark'}" data-act="pickAdd" data-id="${i.id}">${onJob.has(i.id) ? '+1' : 'Add'}</button></div>`; }).join('');
+}
+
+/* ================= photos ================= */
+function photoStore() { return MODE === 'claude' ? !!assetsNs : !!BE.files; }
+function photoGallery(id, admin, name) {
+  const list = photosOf(id); const canAdd = admin && state.role === 'admin' && !state.readOnly && photoStore(); const busy = state.photoBusy === id;
+  if (!list.length && !canAdd) return '';
+  return `<div class="gallery">${list.length ? `<a class="g-main" href="${esc(list[0].url)}" target="_blank" rel="noopener"><img src="${esc(list[0].url)}" alt="${esc(name || 'Photo')}"></a>` : ''}
+    <div class="g-thumbs">${list.map((ph, i) => `<div class="g-th"><a href="${esc(ph.url)}" target="_blank" rel="noopener" aria-label="Photo ${i + 1}"><img src="${esc(ph.thumb || ph.url)}" alt="" loading="lazy"></a>${canAdd ? `<div class="g-acts">${i ? `<button class="x" data-act="photoCover" data-id="${esc(id)}" data-i="${i}" aria-label="Make photo ${i + 1} the cover" title="Make it the cover">★</button>` : ''}<button class="x" data-act="photoRemove" data-id="${esc(id)}" data-i="${i}" aria-label="Remove photo ${i + 1}">×</button></div>` : ''}</div>`).join('')}
+      ${canAdd ? `<label class="g-add ${busy ? 'busy' : ''}">${icon('image', 18)}<span>${busy ? 'Adding…' : list.length ? 'Add' : 'Add photos'}</span><input type="file" accept="image/*" multiple data-ext="photos" data-id="${esc(id)}" ${busy ? 'disabled' : ''}></label>` : ''}</div></div>`;
+}
+function loadImg(file) { return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error(`${file.name} is not an image this browser can read.`)); img.src = URL.createObjectURL(file); }); }
+async function shrinkImage(file, max, q) {
+  let src = null; try { src = await createImageBitmap(file); } catch (_) { src = await loadImg(file); }
+  const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight; const k = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(src, 0, 0, c.width, c.height);
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('That image could not be read.'))), 'image/jpeg', q));
+}
+async function storePhoto(id, full, small) {
+  if (MODE === 'claude') { const a = await assetsNs.upload(full); const t = await assetsNs.upload(small); return { url: a.url, thumb: t.url, ref: `asset:${a.id},${t.id}` }; }
+  return BE.files.photo(id, full, small);
+}
+async function dropPhoto(ref) {
+  if (!ref) return;
+  if (ref.startsWith('asset:')) { if (assetsNs) for (const x of ref.slice(6).split(',')) { try { await assetsNs.delete(x); } catch (_) { /* already gone */ } } return; }
+  if (BE.files) { try { await BE.files.removePhoto(ref); } catch (_) { /* the listing is what matters */ } }
+}
+async function savePhotos(id, list) { await db.doc('photos/' + docKey(id)).set({ itemId: id, list, updatedAt: new Date().toISOString() }); state.photos = Object.assign({}, state.photos, { [id]: list }); }
+async function addPhotos(id, files) {
+  files = files.filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name)).slice(0, 12); if (!files.length || !db) return;
+  state.photoBusy = id; render();
+  const list = photosOf(id).slice(); let added = 0;
+  for (const f of files) {
+    try { const [full, small] = await Promise.all([shrinkImage(f, 1600, 0.82), shrinkImage(f, 480, 0.78)]); const up = await storePhoto(id, full, small); list.push({ url: up.url, thumb: up.thumb, ref: up.ref || '', at: new Date().toISOString() }); added++; }
+    catch (e) { toast((e && e.message) || `${f.name} could not be added.`); }
+  }
+  if (added) { try { await savePhotos(id, list); toast(`${plural(added, 'photo')} added.`); } catch (e) { writeError(e); } }
+  state.photoBusy = ''; render();
+}
+
+/* ================= serial numbers ================= */
+const serialsList = (id) => ((state.gear[id] && state.gear[id].serials) || []);
+const serialsOf = (id) => serialsList(id).filter(Boolean).join(', ');
+function gearInfo(it) {
+  const g = state.gear[it.id] || {}; const serials = g.serials || []; const n = Math.max(1, it.qty); const ro = state.readOnly;
+  const fields = n <= 12 ? Array.from({ length: n }, (_, k) => `<label class="mini"><span>${n > 1 ? 'No. ' + (k + 1) : 'Serial'}</span><input type="text" data-ext="gear" data-id="${esc(it.id)}" data-k="serial" data-n="${k}" value="${esc(serials[k] || '')}" ${ro ? 'disabled' : ''} autocomplete="off" spellcheck="false" aria-label="Serial number ${k + 1}"></label>`).join('')
+    : `<label class="field wide"><span>Serials, one per line</span><textarea rows="4" data-ext="gear" data-id="${esc(it.id)}" data-k="serials" ${ro ? 'disabled' : ''}>${esc(serials.join('\n'))}</textarea></label>`;
+  return `<div class="stack" style="gap:10px"><div class="eyebrow" style="margin:0">Serial numbers</div><div class="serials">${fields}</div>
+    <div class="form" style="grid-template-columns:1fr 1fr"><label class="field"><span>Paid, each</span><input type="number" min="0" step="1" data-ext="gear" data-id="${esc(it.id)}" data-k="paid" value="${esc(g.paid != null ? g.paid : '')}" placeholder="${it.resale != null ? esc(it.resale) : ''}" ${ro ? 'disabled' : ''}></label><label class="field"><span>Bought on</span><input type="date" data-ext="gear" data-id="${esc(it.id)}" data-k="boughtOn" value="${esc(g.boughtOn || '')}" ${ro ? 'disabled' : ''}></label></div>
+    <span class="faint small">Serials go on the insurance schedule and the check-out sheet. What you paid feeds the Money page.</span>
+    <div class="actions"><button class="btn sm" data-act="labelsOpen" data-id="${esc(it.id)}">${icon('qr', 14)} Print ${it.qty > 1 ? 'its labels' : 'its label'}</button></div></div>`;
+}
+const gearTimers = {};
+function saveGearSoon(id) {
+  clearTimeout(gearTimers[id]);
+  gearTimers[id] = setTimeout(async () => {
+    if (!db) return; const g = Object.assign({}, state.gear[id], { itemId: id, updatedAt: new Date().toISOString() });
+    Object.keys(g).forEach((k) => { if (k[0] === '_') delete g[k]; });
+    while (g.serials && g.serials.length && !g.serials[g.serials.length - 1]) g.serials.pop();
+    try { await db.doc('gear/' + docKey(id)).set(g); } catch (e) { writeError(e); }
+  }, 700);
+}
+
+/* ================= labels ================= */
+const PUBLIC_SITE = 'https://manu3931.github.io/Agency/';
+function siteBase() { const u = String(state.settings.siteUrl || BE.siteUrl || (MODE === 'claude' ? PUBLIC_SITE : location.origin + location.pathname)).split('#')[0]; return /^https?:/.test(u) ? u : PUBLIC_SITE; }
+const scanUrl = (id, unit) => `${siteBase()}#scan/${id}${unit ? '/' + unit : ''}`;
+function qrSvg(text) { if (typeof qrcode !== 'function') return ''; const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 2, margin: 0, scalable: true }); }
+function labelItems() {
+  const L = state.label; const pool = state.cat.items.filter((i) => i.qty > 0 && i.cat !== 'Consumable');
+  const list = L.scope === 'all' ? pool : L.scope.startsWith('item:') ? pool.filter((i) => i.id === L.scope.slice(5)) : pool.filter((i) => i.cat === L.scope);
+  return list.map((it) => ({ it, units: L.perUnit && it.qty > 1 ? Array.from({ length: it.qty }, (_, k) => k + 1) : [0] }));
+}
+function labelSheetHtml(list, size) {
+  const S = state.settings; const cells = [];
+  list.forEach((x) => x.units.forEach((u) => {
+    const it = x.it; const sn = u ? (serialsList(it.id)[u - 1] || '') : serialsOf(it.id);
+    cells.push(`<div class="lb"><div class="qr">${qrSvg(scanUrl(it.id, u))}</div><div class="tx"><b>${esc(it.name)}</b><span>${esc(it.id)}${u ? ` · ${u} of ${it.qty}` : ''}</span>${sn ? `<span>S/N ${esc(sn)}</span>` : ''}<i>${esc(S.company || '')}</i></div></div>`);
+  }));
+  const per = size === '5160' ? 30 : 12; const pages = [];
+  for (let i = 0; i < cells.length; i += per) pages.push(`<div class="page">${cells.slice(i, i + per).join('')}</div>`);
+  const css = size === '5160'
+    ? '@page{size:letter;margin:0}body{margin:0}.page{box-sizing:border-box;width:8.5in;height:11in;padding:.5in .1875in 0;display:grid;grid-template-columns:repeat(3,2.625in);column-gap:.125in;grid-auto-rows:1in;align-content:start;break-after:page}.lb{box-sizing:border-box;height:1in;padding:.08in .12in;display:flex;gap:.08in;align-items:center;overflow:hidden}.qr{width:.8in;height:.8in;flex:none}.tx{font:6.5pt/1.25 Arial,sans-serif;display:flex;flex-direction:column;min-width:0}.tx b{font-size:7.5pt;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'
+    : '@page{size:letter;margin:0}body{margin:0}.page{box-sizing:border-box;width:8.5in;height:11in;padding:.6in 1in;display:grid;grid-template-columns:repeat(3,2in);gap:.25in;grid-auto-rows:2in;align-content:start;break-after:page}.lb{box-sizing:border-box;border:1px dashed #bbb;padding:.12in;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden}.qr{width:1.15in;height:1.15in}.tx{font:7pt/1.25 Arial,sans-serif;display:flex;flex-direction:column;margin-top:5px;max-width:100%}.tx b{font-size:8pt}';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Gear labels</title><style>${css}.qr svg{width:100%;height:100%;display:block}.tx i{font-style:normal;color:#666}@media screen{body{background:#e9eaee}.page{background:#fff;margin:16px auto;box-shadow:0 2px 12px rgba(0,0,0,.15)}}</style></head><body>${pages.join('')}<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>`;
+}
+EXTRA_DRAWERS.labels = () => {
+  const L = state.label; const cats = CAT_ORDER.filter((c) => c !== 'Consumable' && state.cat.items.some((i) => i.cat === c && i.qty > 0));
+  const list = labelItems(); const count = sum(list, (x) => x.units.length); const per = L.size === '5160' ? 30 : 12;
+  const item = L.scope.startsWith('item:') ? state.cat.byId[L.scope.slice(5)] : null;
+  const opts = [['all', 'Everything in the pool'], ...cats.map((c) => [c, CAT_LABEL[c]])].concat(item ? [[L.scope, item.name]] : []);
+  return `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="lbTitle"><button class="btn ghost sm close" data-act="closeDrawer">Close</button>
+    <div class="eyebrow" style="margin:0">${icon('qr', 14)} Labels</div><h2 id="lbTitle">A QR code on every piece</h2>
+    <p class="muted" style="margin:0">Scan them at check-out and check-in. Any phone camera also opens the piece's page from one.</p>
+    <label class="field"><span>Which gear</span><select data-ext="label" data-k="scope">${opts.map(([k, l]) => `<option value="${esc(k)}" ${L.scope === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+    <label class="check"><input type="checkbox" data-ext="label" data-k="perUnit" ${L.perUnit ? 'checked' : ''}><span>A numbered label for each piece, not one per item</span></label>
+    <label class="field"><span>Paper</span><select data-ext="label" data-k="size"><option value="5160" ${L.size === '5160' ? 'selected' : ''}>Avery 5160 or 8160 · 30 per sheet, 1 × 2⅝ in</option><option value="square" ${L.size !== '5160' ? 'selected' : ''}>Plain paper · 2 in squares to cut out</option></select></label>
+    <div class="note">${plural(count, 'label')} on ${plural(Math.max(1, Math.ceil(count / per)), 'sheet')}.</div>
+    <button class="btn grad" data-act="labelsPrint" ${count ? '' : 'disabled'}>${icon('qr', 16)} ${MODE === 'claude' ? 'Download the sheet' : 'Open the sheet to print'}</button>
+    <span class="faint small">Print at 100%, not "fit to page". The codes point to ${esc(siteBase())}; change that in Settings if the site moves.</span></aside>`;
+};
+
+/* ================= scanning ================= */
+const buzz = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) { /* no vibration */ } };
+function parseScan(txt) { const m = String(txt || '').match(/([A-Z?]-[A-Z]{3}-\d{1,4})(?:\/(\d+))?/i); return m ? { id: m[1].toUpperCase(), unit: num(m[2]) } : null; }
+function unitsDone(co, l) {
+  const qty = Math.max(1, num(l.qty)); if (qty < 2 || !co || !co.units) return '';
+  const o = (co.units['out:' + l.id] || []).length, bk = (co.units['back:' + l.id] || []).length;
+  return bk ? `${Math.min(bk, qty)} of ${qty} scanned back` : o ? `${Math.min(o, qty)} of ${qty} scanned out` : '';
+}
+function tickUnit(id, unit) {
+  const b = state.draft; if (!b) return false;
+  const dir = state.scan ? state.scan.dir : b.status === 'out' ? 'back' : 'out';
+  const ln = includedLines(b).find((l) => l.id === id); const it = state.cat.byId[id] || { name: id };
+  if (!ln) { toast(`${it.name} is not on this job.`); buzz(250); return false; }
+  const co = b.checkout = b.checkout || { out: {}, back: {}, notes: {} }; co[dir] = co[dir] || {}; co.units = co.units || {};
+  const key = dir + ':' + id; const units = new Set(co.units[key] || []); const qty = Math.max(1, num(ln.qty));
+  if (unit) units.add(unit); else { let k = 1; while (units.has(k)) k++; units.add(k); }
+  co.units[key] = [...units].sort((a, c) => a - c);
+  if (units.size >= qty) co[dir][id] = true;
+  scheduleSave(); buzz(40);
+  toast(`${it.name}${qty > 1 ? ` · ${Math.min(units.size, qty)} of ${qty}` : ''} ${dir === 'back' ? 'checked back in' : 'checked out'}.`);
+  render();
+  return true;
+}
+function scanList() {
+  const b = state.draft; if (!b || !state.scan) return '';
+  const dir = state.scan.dir; const co = b.checkout || {};
+  return `<div class="scan-list">${includedLines(b).map((l) => { const it = state.cat.byId[l.id] || { name: l.id }; const qty = Math.max(1, num(l.qty)); const got = Math.min(qty, ((co.units || {})[dir + ':' + l.id] || []).length || (co[dir] && co[dir][l.id] ? qty : 0));
+    return `<div class="${got >= qty ? 'ok' : ''}"><span>${esc(it.name)}</span><b>${got} / ${qty}</b></div>`; }).join('')}</div>`;
+}
+EXTRA_DRAWERS.scan = () => `<div class="scrim" data-act="scanStop"></div><aside class="drawer scan" role="dialog" aria-modal="true" aria-labelledby="scanTitle"><button class="btn ghost sm close" data-act="scanStop">Done</button>
+  <h2 id="scanTitle">${state.scan && state.scan.dir === 'back' ? 'Check gear back in' : 'Check gear out'}</h2>
+  <p class="muted small" id="scanMsg" role="status" style="margin:0">Point the camera at each label.</p>
+  <div class="scan-view"><video id="scanVideo" playsinline muted></video><div class="scan-frame" aria-hidden="true"></div></div>
+  <div class="row"><input type="text" id="scanManual" data-ext="scanid" placeholder="Or type the ID on the label" aria-label="Item ID" autocomplete="off" spellcheck="false" style="flex:1"><button class="btn sm" data-act="scanManual">Tick</button></div>
+  <div id="scanList">${scanList()}</div></aside>`;
+EXTRA_DRAWERS.scanpick = (d) => `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="spTitle"><button class="btn ghost sm close" data-act="closeDrawer">Close</button>
+  <h2 id="spTitle">${esc((state.cat.byId[d.id] || { name: d.id }).name)}</h2><p class="muted" style="margin:0">It's on more than one job going out or out now. Which one is this?</p>
+  <div class="stack">${d.ids.map((id) => { const b = state.bookings.find((x) => x.id === id); return b ? `<button class="option-btn" data-act="scanPick" data-id="${esc(id)}" data-item="${esc(d.id)}" data-u="${d.unit || 0}"><b>${esc(b.project || b.ref)}</b><span>${pill(b.status)} · ${esc(fmtDay(b.pickup))} to ${esc(fmtDay(b.returnDate))}</span></button>` : ''; }).join('')}</div></aside>`;
+const scanMsg = (t) => { const m = $('#scanMsg'); if (m) m.textContent = t; };
+function loadScript(src) { return new Promise((res) => { const el = document.createElement('script'); el.src = src; el.onload = () => res(true); el.onerror = () => res(false); document.head.appendChild(el); }); }
+async function startCamera() {
+  const v = $('#scanVideo'); if (!v || !state.scan) return;
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { scanMsg('This browser cannot use the camera here. Type the IDs instead.'); return; }
+  try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); if (!state.scan) { stream.getTracks().forEach((t) => t.stop()); return; } state.scan.stream = stream; v.srcObject = stream; await v.play(); }
+  catch (_) { scanMsg('The camera is not available. Allow camera access, or type the IDs instead.'); return; }
+  let detect = null;
+  if ('BarcodeDetector' in window) { try { const bd = new window.BarcodeDetector({ formats: ['qr_code'] }); detect = async () => { const r = await bd.detect(v); return r[0] && r[0].rawValue; }; } catch (_) { detect = null; } }
+  if (!detect && !window.jsQR && MODE !== 'claude') await loadScript('src/vendor/jsQR.js');
+  if (!detect && window.jsQR) {
+    const c = document.createElement('canvas'); const ctx = c.getContext('2d', { willReadFrequently: true });
+    detect = async () => { const w = v.videoWidth, h = v.videoHeight; if (!w) return null; const k = Math.min(1, 720 / w); c.width = Math.round(w * k); c.height = Math.round(h * k); ctx.drawImage(v, 0, 0, c.width, c.height); const img = ctx.getImageData(0, 0, c.width, c.height); const r = window.jsQR(img.data, c.width, c.height, { inversionAttempts: 'dontInvert' }); return r && r.data; };
+  }
+  if (!detect) { scanMsg('This browser cannot read QR codes. Type the IDs instead.'); return; }
+  const loop = async () => { if (!state.scan || !state.scan.stream) return; try { const txt = await detect(); if (txt) onScan(txt); } catch (_) { /* next frame */ } if (state.scan) state.scan.timer = setTimeout(loop, 200); };
+  loop();
+}
+function stopCamera() { const sc = state.scan; if (!sc) return; clearTimeout(sc.timer); if (sc.stream) sc.stream.getTracks().forEach((t) => t.stop()); sc.stream = null; }
+function onScan(txt) {
+  const sc = state.scan; const now = Date.now(); if (!sc || (txt === sc.last && now - sc.lastAt < 2500)) return;
+  sc.last = txt; sc.lastAt = now; const hit = parseScan(txt);
+  if (!hit) { toast('That code is not one of our labels.'); return; }
+  tickUnit(hit.id, hit.unit);
+}
+/* A label scanned with a phone's own camera opens the site at #scan/<item>/<unit>. For the team, that ticks it on
+   the job going out or coming back; for anyone else, it opens the piece's page. */
+function scanRoute(id, unit) {
+  const it = state.cat.byId[id];
+  if (state.role !== 'admin') { if (it) { state.drawer = { kind: 'item', id }; render(); } return; }
+  const t = todayStr();
+  const cand = state.bookings.filter((b) => (b.status === 'out' || (['quoted', 'confirmed'].includes(b.status) && b.pickup >= addDays(t, -1) && b.pickup <= addDays(t, 2))) && includedLines(b).some((l) => l.id === id));
+  if (cand.length === 1) { state.tab = 'handoff'; openBooking(cand[0].id); tickUnit(id, unit); return; }
+  if (cand.length > 1) { state.drawer = { kind: 'scanpick', id, unit, ids: cand.map((b) => b.id) }; render(); return; }
+  if (it) { state.drawer = { kind: 'item', id }; render(); toast(`${it.name} is not on a job going out or out now.`); } else toast('That label is not on the gear list.');
+}
+
+/* ================= calendar ================= */
+const icsText = (x) => String(x || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
+const icsWhen = (date, time) => String(date).replace(/-/g, '') + 'T' + String(time || '09:00').replace(':', '') + '00';
+const addMins = (date, time, m) => { const [h, mi] = String(time || '09:00').split(':').map(Number); const d = parseYmd(date); d.setHours(h, mi + m); return icsWhen(ymd(d), `${pad(d.getHours())}:${pad(d.getMinutes())}`); };
+function calEvents(b, forClient) {
+  const S = state.settings; const h = b.handoff || {}; const title = b.project || b.ref; const who = forClient ? S.company : clientName(b);
+  const place = (m) => (m === 'delivery' ? (h.address || 'Delivery') : m === 'afterhours' ? 'After-hours handoff' : S.pickup);
+  const note = `${b.ref}${who ? ' · ' + who : ''}${S.phone ? ' · ' + S.phone : ''}`;
+  const ev = [];
+  if (b.pickup) ev.push({ uid: `${b.id}-out`, date: b.pickup, time: b.pickupTime || '15:00', mins: 30, title: `${forClient ? 'Pick up gear' : 'Gear goes out'}: ${title}`, where: place(h.out), note });
+  if (b.returnDate) ev.push({ uid: `${b.id}-back`, date: b.returnDate, time: b.returnTime || '10:00', mins: 30, title: `${forClient ? 'Return the gear' : 'Gear comes back'}: ${title}`, where: place(h.back), note, remind: true });
+  if (num(b.shootDays) > 0) { const st = b.shootStart || b.pickup; ev.push({ uid: `${b.id}-shoot`, allDay: true, date: st, end: addDays(st, num(b.shootDays)), title: `On set: ${title}`, note }); }
+  return ev;
+}
+const NY_TZ = ['BEGIN:VTIMEZONE', 'TZID:America/New_York', 'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT', 'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST', 'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD', 'END:VTIMEZONE'];
+function icsDoc(events, name) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Shared Gear Pool//Rental desk//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${icsText(name || state.settings.company)}`, 'X-WR-TIMEZONE:America/New_York', ...NY_TZ];
+  events.forEach((e) => {
+    L.push('BEGIN:VEVENT', `UID:${e.uid}@sharedgearpool`, `DTSTAMP:${stamp}`);
+    if (e.allDay) L.push(`DTSTART;VALUE=DATE:${e.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${e.end.replace(/-/g, '')}`);
+    else L.push(`DTSTART;TZID=America/New_York:${icsWhen(e.date, e.time)}`, `DURATION:PT${e.mins}M`);
+    L.push(`SUMMARY:${icsText(e.title)}`); if (e.where) L.push(`LOCATION:${icsText(e.where)}`); if (e.note) L.push(`DESCRIPTION:${icsText(e.note)}`);
+    if (e.remind) L.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText('Due back tomorrow. ' + e.title)}`, 'TRIGGER:-P1D', 'END:VALARM');
+    L.push('END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  return L.map((line) => { const out = []; let x = line; while (x.length > 74) { out.push(x.slice(0, 74)); x = ' ' + x.slice(74); } out.push(x); return out.join('\r\n'); }).join('\r\n') + '\r\n';
+}
+function gcalUrl(b, which, forClient) {
+  const e = calEvents(b, forClient).find((x) => x.uid.endsWith(which === 'out' ? '-out' : '-back')); if (!e) return '#';
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: e.title, dates: `${icsWhen(e.date, e.time)}/${addMins(e.date, e.time, e.mins)}`, ctz: 'America/New_York', details: e.note + (e.remind ? '\nDue back by ' + fmtTime(e.time) + '.' : ''), location: e.where || '' });
+  return 'https://calendar.google.com/calendar/render?' + q.toString();
+}
+function calButtons(b) {
+  if (!b.pickup || !b.returnDate) return '';
+  const fc = state.role !== 'admin';
+  return `<div class="actions cal-btns"><button class="btn sm" data-act="icsJob" data-id="${esc(b.id)}">${icon('calendar', 14)} Add to calendar</button><a class="btn ghost sm" href="${esc(gcalUrl(b, 'out', fc))}" target="_blank" rel="noopener">Google: pickup</a><a class="btn ghost sm" href="${esc(gcalUrl(b, 'back', fc))}" target="_blank" rel="noopener">Google: return</a></div>`;
+}
+
+/* ================= money ================= */
+const moneyShort = (n) => (Math.abs(n) >= 10000 ? '$' + (n / 1000).toFixed(0) + 'k' : Math.abs(n) >= 1000 ? '$' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : money(n));
+/* What one line of a job earned: its rental and hold days, after the job's discount. Crew and tax are not the gear's. */
+function lineEarn(b, ln, c) {
+  if (ln.comp || b.favor) return 0;
+  const poss = c.weekend ? 0 : lineRate(ln) * num(ln.qty) * num(state.settings.possessionPct, 50) / 100 * num(b.possessionDays);
+  return (lineTotal(b, ln) + poss) * (1 - discountPct(b) / 100);
+}
+function costOf(it) { const g = state.gear[it.id] || {}; if (g.paid != null && g.paid !== '') return { v: num(g.paid) * Math.max(1, it.qty), paid: true }; if (it.resale != null) return { v: num(it.resale) * Math.max(1, it.qty), paid: false }; return null; }
+function moneyStats(days) {
+  const t = todayStr(); const from = days ? addDays(t, -days + 1) : null;
+  const jobs = state.bookings.filter((b) => EARNED.has(b.status) && b.pickup && b.pickup <= t);
+  const first = jobs.reduce((a, b) => (a && a < b.pickup ? a : b.pickup), '') || t;
+  const span = days || Math.max(30, diffDays(first, t) + 1);
+  const per = {}; const at = (id) => (per[id] = per[id] || { jobs: 0, unitDays: 0, earned: 0, life: 0, year: 0, last: '' });
+  jobs.forEach((b) => {
+    const c = chosen(b); const nights = Math.max(1, diffDays(b.pickup, bookingEnd(b))); const inWin = !from || b.pickup >= from; const inYear = b.pickup >= addDays(t, -364);
+    const seen = new Set();
+    includedLines(b).forEach((ln) => {
+      const x = at(ln.id); const e = lineEarn(b, ln, c); x.life += e; if (inYear) x.year += e;
+      if (!inWin) return;
+      x.earned += e; x.unitDays += num(ln.qty) * nights; if (!seen.has(ln.id)) { x.jobs++; seen.add(ln.id); } if (b.pickup > x.last) x.last = b.pickup;
+    });
+  });
+  const rows = state.cat.items.filter((i) => i.qty > 0 && i.cat !== 'Consumable').map((it) => {
+    const x = per[it.id] || { jobs: 0, unitDays: 0, earned: 0, life: 0, year: 0, last: '' }; const cost = costOf(it);
+    const util = Math.min(1, x.unitDays / (Math.max(1, it.qty) * span));
+    const back = cost && cost.v ? x.life / cost.v : null; const rate = x.year / 365;
+    const eta = cost && back != null && back < 1 && rate > 0 ? Math.ceil((cost.v - x.life) / rate) : null;
+    return Object.assign({ it, util, cost, back, eta }, x);
+  });
+  const months = []; const d0 = parseYmd(t);
+  for (let k = 11; k >= 0; k--) { const d = new Date(d0.getFullYear(), d0.getMonth() - k, 1); months.push({ key: ymd(d).slice(0, 7), label: d.toLocaleDateString('en-US', { month: 'short' }), long: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), v: 0 }); }
+  const mIdx = Object.fromEntries(months.map((m, i) => [m.key, i]));
+  let gear12 = 0, total12 = 0, n12 = 0, fund12 = 0;
+  jobs.forEach((b) => { const c = chosen(b); const i = mIdx[b.pickup.slice(0, 7)]; if (i == null) return; months[i].v += c.gear; gear12 += c.gear; total12 += c.total; fund12 += c.fund; n12++; });
+  const ahead = state.bookings.filter((b) => FIRM.has(b.status) && b.pickup > t).reduce((a, b) => a + chosen(b).gear, 0);
+  return { rows, months, gear12, total12, n12, fund12, ahead, span, thisMonth: months[11].v };
+}
+function niceStep(max) { const raw = max / 4; const p = Math.pow(10, Math.floor(Math.log10(raw || 1))); return [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => x >= raw) || p * 10; }
+function monthChart(months) {
+  const max = Math.max(0, ...months.map((m) => m.v)); const step = niceStep(max || 1000); const top = Math.max(step, Math.ceil(max / step) * step);
+  const ticks = []; for (let v = 0; v <= top + 1e-6; v += step) ticks.push(v);
+  const peak = max > 0 ? months.findIndex((m) => m.v === max) : -1;
+  return `<div class="colchart"><p class="sr-only">Gear rental earned each month, last 12 months. Highest: ${peak >= 0 ? esc(months[peak].long + ', ' + money(max)) : 'nothing yet'}. The table below has every month.</p><div class="cc-plot">
+    ${ticks.map((v) => `<div class="cc-tick" style="bottom:${(v / top * 100).toFixed(2)}%"><span>${moneyShort(v)}</span></div>`).join('')}
+    <div class="cc-cols">${months.map((m, i) => `<div class="cc-col" tabindex="0" role="img" aria-label="${esc(m.long)}: ${esc(money(m.v))}"><div class="cc-bar ${i === 11 ? 'now' : ''}" style="height:${(m.v / top * 100).toFixed(2)}%">${i === peak ? `<span class="cc-val">${moneyShort(m.v)}</span>` : ''}</div><span class="cc-tip" aria-hidden="true"><b>${esc(m.long)}</b>${esc(money(m.v))}</span></div>`).join('')}</div></div>
+    <div class="cc-x" aria-hidden="true">${months.map((m) => `<span>${esc(m.label)}</span>`).join('')}</div>
+    <details class="cc-table"><summary class="small">Show as a table</summary><table class="plain"><thead><tr><th>Month</th><th class="n">Gear rental</th></tr></thead><tbody>${months.map((m) => `<tr><td>${esc(m.long)}</td><td class="n">${money(m.v)}</td></tr>`).join('')}</tbody></table></details></div>`;
+}
+const meter = (f, label) => `<span class="meter" role="img" aria-label="${esc(label)}"><i style="width:${(Math.max(0, Math.min(1, f)) * 100).toFixed(1)}%"></i></span>`;
+function vMoney() {
+  const M = state.money; const st = moneyStats(M.period); const S = state.settings; const t = todayStr();
+  const earned = st.rows.filter((r) => r.jobs || r.life).sort((a, b) => b.earned - a.earned || b.life - a.life);
+  const shown = M.all ? st.rows.slice().sort((a, b) => b.earned - a.earned || a.it.name.localeCompare(b.it.name)) : earned.slice(0, 25);
+  const turnedAway = new Set(); state.bookings.filter((b) => HOLDS.has(b.status)).forEach((b) => conflicts(b).forEach((c) => { if (c.kind === 'over') turnedAway.add(c.id); }));
+  const more = st.rows.filter((r) => r.it.rec != null && (r.util >= 0.5 || turnedAway.has(r.it.id))).sort((a, b) => b.util - a.util).slice(0, 5);
+  const idle = st.rows.filter((r) => r.it.rec != null && (!r.last || r.last < addDays(t, -180)) && r.cost && r.cost.v >= 300).sort((a, b) => b.cost.v - a.cost.v).slice(0, 5);
+  const paid = st.rows.filter((r) => r.back != null && r.back >= 1).sort((a, b) => b.back - a.back).slice(0, 5);
+  const period = (k, l) => `<button data-act="moneyPeriod" data-p="${k}" aria-pressed="${M.period === k}">${l}</button>`;
+  const tile = (label, value, sub) => `<div class="stat"><span class="lbl">${label}</span><b class="val">${value}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  const nm = (r) => `<button class="linkish" data-act="item" data-id="${esc(r.it.id)}">${esc(r.it.name)}</button>`;
+  return `<section class="view">
+    ${hero('What the gear earns', 'The <em class="s">money</em>', 'Gear rental after discounts, by month and by piece. Crew pay and sales tax are left out: they are not the gear\u2019s.')}
+    <div class="kpis">
+      ${tile('Gear rental, last 12 months', money(st.gear12), `${plural(st.n12, 'job')}${st.ahead ? ` · ${money(st.ahead)} more booked ahead` : ''}`)}
+      ${tile('This month', money(st.thisMonth), fmtDay(t, { month: 'long', year: 'numeric' }))}
+      ${tile('Average job', st.n12 ? money(st.total12 / st.n12) : '—', 'everything billed, incl. crew and tax')}
+      ${tile('Into the gear fund', money(st.fund12), `${num(S.fundPct)}% of gear rental`)}
+    </div>
+    <div class="card"><div class="hd"><h2 class="t">Gear rental by month</h2><span class="muted small">By the month each job went out</span></div><div class="bd">${monthChart(st.months)}</div></div>
+    <div class="grid3">
+      <div class="card"><div class="hd"><h3 class="t">Worth a second one</h3></div><div class="bd stack" style="gap:8px">${more.length ? more.map((r) => `<div class="sug"><div class="grow">${nm(r)}<div class="muted small">${turnedAway.has(r.it.id) ? 'Short on an upcoming job' : `Out ${Math.round(r.util * 100)}% of the time`}</div></div><button class="btn ghost sm" data-act="fundSuggest" data-id="${esc(r.it.id)}">Add to buying list</button></div>`).join('') : '<span class="muted small">Nothing is out more than half the time yet.</span>'}</div></div>
+      <div class="card"><div class="hd"><h3 class="t">Sitting idle</h3></div><div class="bd stack" style="gap:8px">${idle.length ? idle.map((r) => `<div class="sug"><div class="grow">${nm(r)}<div class="muted small">${r.last ? 'Last out ' + esc(fmtDay(r.last)) : 'Not rented yet'} · ${r.cost.paid ? 'paid' : 'worth'} ${money(r.cost.v)}</div></div></div>`).join('') + '<span class="faint small">Sell it, or put it in a kit where it earns its keep.</span>' : `<span class="muted small">${PREVIEW ? 'What each piece is worth is hidden in the preview. Add what you paid on a piece to see it here.' : 'Everything worth $300 or more went out in the last six months.'}</span>`}</div></div>
+      <div class="card"><div class="hd"><h3 class="t">Paid for itself</h3></div><div class="bd stack" style="gap:8px">${paid.length ? paid.map((r) => `<div class="sug"><div class="grow">${nm(r)}<div class="muted small">Earned ${money(r.life)} on ${money(r.cost.v)}</div></div><span class="pill good">${Math.round(r.back * 100)}%</span></div>`).join('') : '<span class="muted small">Nothing has earned back what it cost yet.</span>'}</div></div>
+    </div>
+    <div class="card"><div class="hd"><h2 class="t">Piece by piece</h2><div class="seg" role="group" aria-label="Period">${period(90, '90 days')}${period(365, '12 months')}${period(0, 'All time')}</div></div>
+      <div class="tbl" tabindex="0"><table class="plain money-tbl"><thead><tr><th>Piece</th><th class="n">Jobs</th><th class="n">Days out</th><th>How busy</th><th class="n">Earned</th><th>Paid back</th></tr></thead><tbody>
+        ${shown.length ? shown.map((r) => `<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap">${thumb(r.it, true)}<div style="min-width:0">${nm(r)}<div class="muted small">${r.it.qty > 1 ? `${r.it.qty} in the pool` : 'One'}${r.last ? ' · last out ' + esc(fmtDay(r.last, { month: 'short', day: 'numeric' })) : ''}</div></div></div></td>
+          <td class="n">${r.jobs}</td><td class="n">${Math.round(r.unitDays)}</td><td>${meter(r.util, `Out ${Math.round(r.util * 100)}% of the time`)}<span class="small muted"> ${Math.round(r.util * 100)}%</span></td><td class="n">${money(r.earned)}</td>
+          <td>${r.back == null ? `<span class="faint small">${PREVIEW && !r.cost ? 'value hidden' : 'add what you paid'}</span>` : `${meter(r.back, `Paid back ${Math.round(r.back * 100)}%`)}<span class="small muted"> ${Math.round(r.back * 100)}%${r.eta ? ` · ~${r.eta > 60 ? Math.round(r.eta / 30) + ' mo' : r.eta + ' days'} to go` : ''}</span>`}</td></tr>`).join('')
+          : `<tr><td colspan="6"><div class="empty"><b>No earnings in this period</b><span>Confirmed jobs count from the day they go out.</span></div></td></tr>`}
+      </tbody></table></div>
+      ${!M.all && st.rows.length > shown.length ? `<div class="bd" style="padding-top:8px"><button class="btn ghost sm" data-act="moneyAll">Show all ${st.rows.length} pieces</button></div>` : ''}
+      <div class="bd" style="padding-top:0"><span class="faint small">Paid back compares everything a piece has earned with what you paid for it (add it on the piece), or with what it\u2019s worth when you haven\u2019t. The estimate to go uses the last 12 months\u2019 pace.</span></div></div>
+  </section>`;
+}
+
+/* ================= clients ================= */
+const normKey = (x) => String(x || '').trim().toLowerCase();
+function clientIndex() {
+  const map = new Map();
+  const put = (k, seed) => { if (!map.has(k)) map.set(k, Object.assign({ key: k, email: '', name: '', company: '', phone: '', jobs: [], docs: [], rec: null, notes: '' }, seed)); return map.get(k); };
+  const fill = (r, c) => { ['email', 'name', 'company', 'phone'].forEach((f) => { if (!r[f] && c[f]) r[f] = c[f]; }); };
+  Object.values(state.clientRecs).forEach((rec) => { const em = normKey(rec.email); const r = put(em ? 'e:' + em : 'r:' + rec._id, {}); r.rec = rec; fill(r, rec); r.notes = rec.notes || ''; r.docs = r.docs.concat((rec.docs || []).map((d) => Object.assign({ recId: rec._id }, d))); });
+  state.bookings.forEach((b) => {
+    const c = b.client || {}; const em = normKey(c.email), co = normKey(c.company);
+    const k = em ? 'e:' + em : co ? 'c:' + co : normKey(c.name) ? 'n:' + normKey(c.name) : ''; if (!k || b.example) return;
+    const r = put(k, {}); fill(r, c); r.jobs.push(b);
+  });
+  return [...map.values()].map((r) => {
+    const earned = r.jobs.filter((b) => EARNED.has(b.status)); const t = todayStr();
+    const valid = (kind) => r.docs.filter((d) => d.kind === kind && d.status !== 'rejected').sort((a, b) => String(b.expires || '9999').localeCompare(String(a.expires || '9999')))[0] || null;
+    return Object.assign(r, { earned: earned.length, spent: sum(earned, (b) => (b.bill && b.bill.total) || chosen(b).total), last: r.jobs.reduce((a, b) => (b.pickup > a ? b.pickup : a), ''), coi: valid('coi'), st121: valid('st121'), expired: r.docs.some((d) => d.kind === 'coi' && d.expires && d.expires < t) });
+  }).sort((a, b) => String(b.last).localeCompare(String(a.last)) || (a.company || a.name).localeCompare(b.company || b.name));
+}
+function clientFor(b) { const c = b.client || {}; const em = normKey(c.email), co = normKey(c.company); return clientIndex().find((r) => (em && r.key === 'e:' + em) || (!em && co && r.key === 'c:' + co)) || null; }
+function docPill(d, kind) {
+  if (!d) return `<span class="pill">${kind === 'coi' ? 'No certificate' : 'No ST-121'}</span>`;
+  const left = d.expires ? diffDays(todayStr(), d.expires) : null;
+  const tone = left != null && left < 0 ? 'bad' : left != null && left <= 30 ? 'warn' : d.status === 'ok' ? 'good' : 'info';
+  return `<span class="pill ${tone}">${kind === 'coi' ? 'Certificate' : 'ST-121'}${d.expires ? (left < 0 ? ' expired ' : ' to ') + esc(fmtDay(d.expires, { month: 'short', day: 'numeric', year: '2-digit' })) : ' on file'}</span>`;
+}
+function vClients() {
+  const q = normKey(state.clientsQ); const all = clientIndex();
+  const list = all.filter((r) => !q || [r.name, r.company, r.email, r.phone].some((x) => normKey(x).includes(q)));
+  return `<section class="view">
+    ${hero('Everyone you rent to', 'The <em class="s">clients</em>', `Their jobs and paperwork in one place. ${num(state.settings.returningPct) && state.settings.autoReturning ? `Returning clients get ${num(state.settings.returningPct)}% off by themselves.` : ''}`)}
+    <div class="card"><div class="bd"><label class="field"><span>Search</span><input type="search" id="cl-q" data-ext="clientsq" value="${esc(state.clientsQ)}" placeholder="Name, company or email"></label></div></div>
+    <div class="card">${state.dbState !== 'ready' ? dbGate('clients') : list.length ? `<div class="bd flush">${list.map((r) => `<div class="li click client-li" data-act="clientOpen" data-k="${esc(r.key)}" tabindex="0" role="button"><span class="av" aria-hidden="true">${esc(initials(r.company || r.name || r.email))}</span><div class="grow"><div class="ttl">${esc(r.company || r.name || r.email)}</div><div class="sub">${esc([r.company ? r.name : '', r.email].filter(Boolean).join(' · ') || 'No contact details')}</div></div>
+        <div class="meta">${r.earned > 1 || (r.earned === 1 && r.jobs.length > 1) ? `<span class="pill good">Returning · ${plural(r.earned, 'job')}</span>` : `<span class="pill">${plural(r.jobs.length, 'job')}</span>`}${docPill(r.coi, 'coi')}${r.st121 ? docPill(r.st121, 'st121') : ''}<b class="num tot">${money(r.spent)}</b></div></div>`).join('')}</div>`
+      : `<div class="empty"><b>${q ? 'Nobody matches' : 'No clients yet'}</b><span>${q ? 'Try another name or email.' : 'Clients appear here from their jobs and when they sign up on the storefront.'}</span></div>`}</div>
+  </section>`;
+}
+EXTRA_DRAWERS.client = (d) => {
+  const r = clientIndex().find((x) => x.key === d.key); if (!r) return '';
+  const f = state.docAdd || (state.docAdd = { kind: 'coi', expires: '', insurer: '', limit: '', file: null });
+  return `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="clTitle"><button class="btn ghost sm close" data-act="closeDrawer">Close</button>
+    <div class="row"><span class="av lg" aria-hidden="true">${esc(initials(r.company || r.name || r.email))}</span><div class="grow"><h2 id="clTitle">${esc(r.company || r.name || r.email)}</h2><div class="muted small">${esc([r.company ? r.name : '', r.email, r.phone].filter(Boolean).join(' · '))}</div></div></div>
+    <div class="chips">${r.earned ? `<span class="pill good">${plural(r.earned, 'job')} done · ${money(r.spent)}</span>` : ''}${r.rec && r.rec.uid ? '<span class="pill info">Has an account</span>' : ''}</div>
+    <div><div class="eyebrow">Documents on file</div><div class="stack" style="gap:8px">${r.docs.length ? r.docs.map((x) => `<div class="doc-row">${icon('doc', 16)}<span class="grow small"><b>${esc(DOC_KIND[x.kind] || x.kind)}</b>${x.insurer ? ' · ' + esc(x.insurer) : ''}${x.limit ? ' · covers ' + money(num(x.limit)) : ''}<br><span class="muted">${esc(x.name || (x.from === 'team' ? 'Added by the team' : ''))}</span></span>${docExpiry(x)}
+      ${x.status === 'ok' ? '<span class="pill good">Accepted</span>' : x.status === 'rejected' ? '<span class="pill bad">Not accepted</span>' : `<button class="btn sm dark" data-act="docStatus" data-k="${esc(r.key)}" data-rec="${esc(x.recId)}" data-d="${esc(x.id)}" data-s="ok">Accept</button><button class="btn ghost sm" data-act="docStatus" data-k="${esc(r.key)}" data-rec="${esc(x.recId)}" data-d="${esc(x.id)}" data-s="rejected">Reject</button>`}
+      ${x.file || x.url ? `<button class="btn ghost sm" data-act="openDoc" data-path="${esc(x.file || '')}" data-url="${esc(x.url || '')}">Open</button>` : ''}</div>`).join('') : '<span class="muted small">Nothing yet.</span>'}</div></div>
+    <details><summary class="small" style="cursor:pointer;font-weight:600">Add a document</summary><div class="form" style="grid-template-columns:1fr 1fr;margin-top:10px">
+      <label class="field"><span>What</span><select data-ext="docadd" data-k="kind"><option value="coi" ${f.kind === 'coi' ? 'selected' : ''}>Insurance certificate</option><option value="st121" ${f.kind === 'st121' ? 'selected' : ''}>ST-121</option></select></label>
+      <label class="field"><span>Expires</span><input type="date" data-ext="docadd" data-k="expires" value="${esc(f.expires)}"></label>
+      ${f.kind === 'coi' ? `<label class="field"><span>Insurer</span><input type="text" data-ext="docadd" data-k="insurer" value="${esc(f.insurer)}"></label><label class="field"><span>Covers rented gear up to</span><input type="number" min="0" data-ext="docadd" data-k="limit" value="${esc(f.limit)}"></label>` : ''}
+      <label class="field wide"><span>File (optional)</span><input type="file" accept="application/pdf,image/*" data-ext="docadd" data-k="file">${f.file ? `<small>Chosen: ${esc(f.file.name)}</small>` : ''}</label>
+      <button class="btn dark wide" data-act="docAdd" data-k="${esc(r.key)}">Add it</button></div></details>
+    <label class="field"><span>Notes</span><textarea rows="3" data-ext="clientnote" data-k="${esc(r.key)}" placeholder="How they like to work, who to call, anything that went wrong">${esc(r.notes)}</textarea></label>
+    <div><div class="eyebrow">Jobs</div><div class="stack" style="gap:6px">${r.jobs.length ? r.jobs.sort((a, b) => String(b.pickup).localeCompare(String(a.pickup))).map((b) => `<button class="option-btn" data-act="openBooking" data-id="${esc(b.id)}"><b>${esc(b.project || b.ref)}</b><span>${pill(b.status)} · ${esc(fmtDay(b.pickup))} · ${money((b.bill && b.bill.total) || chosen(b).total)}</span></button>`).join('') : '<span class="muted small">No jobs yet.</span>'}</div></div>
+  </aside>`;
+};
+/* The record a client's details and documents are kept in: their own account's if they have one, otherwise one keyed by email. */
+function recFor(r) {
+  if (r.rec) return { path: 'clients/' + r.rec._id, data: Object.assign({}, r.rec) };
+  const id = 'e-' + docKey(r.email || r.company || r.name || 'client');
+  return { path: 'clients/' + id, data: { email: r.email || '', name: r.name || '', company: r.company || '', phone: r.phone || '', docs: [] } };
+}
+async function saveRec(rec) { const d = Object.assign({}, rec.data); Object.keys(d).forEach((k) => { if (k[0] === '_') delete d[k]; }); d.updatedAt = new Date().toISOString(); await db.doc(rec.path).set(d); }
+function onFileCoi(b) {
+  const r = clientFor(b); if (!r || !r.coi || (b.coi && b.coi.docId === r.coi.id)) return '';
+  const d = r.coi; const ok = !d.expires || d.expires >= (b.returnDate || '');
+  return `<div class="doc-row">${icon('doc', 16)}<span class="grow small">On file: certificate${d.insurer ? ' from ' + esc(d.insurer) : ''}${d.limit ? ', covers ' + money(num(d.limit)) : ''}${d.expires ? `, ${ok ? 'good to' : 'expired'} ${esc(fmtDay(d.expires))}` : ''}.</span>${ok ? `<button class="btn sm" data-act="useCoi" data-k="${esc(r.key)}">Use it</button>` : ''}</div>`;
+}
+function onFileSt121(b) {
+  const r = clientFor(b); if (!r || !r.st121) return '';
+  return `<div class="doc-row">${icon('doc', 16)}<span class="grow small">On file: ST-121${r.st121.status === 'ok' ? ', accepted' : ''}${r.st121.expires ? ', to ' + esc(fmtDay(r.st121.expires)) : ''}.</span><button class="btn sm" data-act="useSt121" data-k="${esc(r.key)}">Use it</button></div>`;
 }
 
 /* ================= documents ================= */
@@ -1203,7 +2019,7 @@ function agreementModel(b) {
 }
 function agreementHTML(b) {
   const m = agreementModel(b);
-  const sched = `<div class="tbl"><table><thead><tr><th>Item</th><th>Owner</th><th class="n">Qty</th><th class="n">Day rate</th><th class="n">Hold day</th><th class="n">Replacement value</th></tr></thead><tbody>${m.rows.map((r) => `<tr><td>${esc(r.name)}${r.comped ? ' <em>(on the house)</em>' : ''}<br><small>${esc(r.id)}</small></td><td>${esc(OWNERS[r.own] ? OWNERS[r.own].name : '')}</td><td class="n">${r.qty}</td><td class="n">${money(r.day)}</td><td class="n">${money(r.poss)}</td><td class="n">${money(r.repl)}</td></tr>`).join('')}<tr class="total"><td colspan="3">Totals</td><td class="n">${money(m.tot.day)}</td><td class="n">${money(m.tot.poss)}</td><td class="n">${money(m.tot.repl)}</td></tr></tbody></table></div>`;
+  const sched = `<div class="tbl" tabindex="0"><table><thead><tr><th>Item</th><th>Owner</th><th class="n">Qty</th><th class="n">Day rate</th><th class="n">Hold day</th><th class="n">Replacement value</th></tr></thead><tbody>${m.rows.map((r) => `<tr><td>${esc(r.name)}${r.comped ? ' <em>(on the house)</em>' : ''}<br><small>${esc(r.id)}</small></td><td>${esc(OWNERS[r.own] ? OWNERS[r.own].name : '')}</td><td class="n">${r.qty}</td><td class="n">${money(r.day)}</td><td class="n">${money(r.poss)}</td><td class="n">${money(r.repl)}</td></tr>`).join('')}<tr class="total"><td colspan="3">Totals</td><td class="n">${money(m.tot.day)}</td><td class="n">${money(m.tot.poss)}</td><td class="n">${money(m.tot.repl)}</td></tr></tbody></table></div>`;
   return `<div class="draft">Draft for review by a New York attorney before first use</div>
     <h2>Equipment Rental Agreement</h2>
     <p>Agreement ${esc(b.ref)} · prepared ${esc(fmtLong(todayStr()))}<br>Between <b>${esc(m.owner)}</b>${m.S.address ? ', ' + esc(m.S.address) : ''}, for the equipment owners named in Schedule A (“Owner”), and <b>${esc(m.renter)}</b>${b.client && b.client.name && b.client.company ? `, attention ${esc(b.client.name)}` : ''} (“Renter”), for ${esc(b.project || 'the production named above')}.</p>
@@ -1220,8 +2036,25 @@ function agreementText(b) {
   lines.push(`TOTALS | | | | ${money(m.tot.day)} | ${money(m.tot.poss)} | ${money(m.tot.repl)}`, '', `For ${m.owner}: ____________________  Date: ________`, `For ${m.renter}: ____________________  Date: ________`);
   return lines.join('\n');
 }
+async function sha256hex(text) {
+  if (!(window.crypto && crypto.subtle)) return '';
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+async function snapshotAgreement(b) {
+  const prev = b.contract || {}; const text = agreementText(b);
+  const history = (prev.history || []).slice(-4);
+  if (prev.status === 'signed' && prev.signature) history.push({ signer: prev.signer, signedAt: prev.signedAt, hash: prev.signedHash || prev.hash || '', sentAt: prev.sentAt || '' });
+  b.contract = { status: 'sent', sentAt: new Date().toISOString(), text, html: agreementHTML(b), hash: await sha256hex(text).catch(() => ''), history };
+}
+const contractStale = (b) => { const ct = b.contract || {}; return !!ct.text && ['sent', 'signed'].includes(ct.status) && agreementText(b) !== ct.text; };
+const safeSig = (x) => (/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(x || '') ? x : '');
+function sigBlock(ct) {
+  return `<div class="esig"><img src="${esc(safeSig(ct.signature))}" alt="Signature of ${esc(ct.signer)}"><div><b>${esc(ct.signer)}</b><br>Signed electronically ${esc(fmtStamp(ct.signedAt))}${ct.signedFrom ? `<br><small>From ${esc(ct.signedFrom)}</small>` : ''}${ct.signedHash ? `<br><small>Document fingerprint ${esc(String(ct.signedHash).slice(0, 16))}…</small>` : ''}</div></div>`;
+}
+function signedCopy(b) { const ct = b.contract || {}; return standaloneDoc(`Rental agreement ${b.ref}`, (ct.html || agreementHTML(b)) + (ct.signature ? sigBlock(ct) : '')); }
 function standaloneDoc(title, inner) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>body{font:14px/1.55 Georgia,serif;color:#1b1d20;max-width:820px;margin:40px auto;padding:0 24px}h2{font:700 28px/1.1 Arial,sans-serif}h3{font:700 15px Arial,sans-serif;margin:18px 0 4px}table{width:100%;border-collapse:collapse;font:12.5px Arial,sans-serif}th,td{border-bottom:1px solid #ccc;padding:6px;text-align:left}.n{text-align:right}.total td{font-weight:700;border-top:2px solid #000}.draft{font:600 11px Arial;letter-spacing:.1em;text-transform:uppercase;color:#a05a14}.sig{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:40px}.sig div{border-top:1px solid #000;padding-top:6px;font:12px Arial}</style></head><body>${inner}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>body{font:14px/1.55 Georgia,serif;color:#1b1d20;max-width:820px;margin:40px auto;padding:0 24px}h2{font:700 28px/1.1 Arial,sans-serif}h3{font:700 15px Arial,sans-serif;margin:18px 0 4px}table{width:100%;border-collapse:collapse;font:12.5px Arial,sans-serif}th,td{border-bottom:1px solid #ccc;padding:6px;text-align:left}.n{text-align:right}.total td{font-weight:700;border-top:2px solid #000}.draft{font:600 11px Arial;letter-spacing:.1em;text-transform:uppercase;color:#a05a14}.sig{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:40px}.sig div{border-top:1px solid #000;padding-top:6px;font:12px Arial}.esig{display:flex;gap:16px;align-items:center;margin-top:24px;border-top:1px solid #000;padding-top:10px;font:12px Arial}.esig img{height:70px;background:#fff}</style></head><body>${inner}</body></html>`;
 }
 function coiRequestText(b) {
   const S = state.settings; const c = chosen(b); const owner = S.legalName || S.company;
@@ -1243,9 +2076,80 @@ ${S.company}${S.phone ? '\n' + S.phone : ''}`;
 }
 
 /* ================= actions ================= */
+Object.assign(EXTRA_DRAWERS, {
+  paysim() {
+    const sim = state.pay.sim || {};
+    return `<div class="scrim" data-act="closeDrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="simTitle"><button class="btn ghost sm close" data-act="closeDrawer">Cancel</button>
+      <div class="eyebrow" style="margin:0">${icon('lock', 14)} Checkout · simulated</div><h2 id="simTitle">${sim.kind === 'hold' ? 'Place a card hold' : 'Pay by card'}</h2>
+      <div class="big">${money(num(sim.amount))}</div><span class="muted small">${esc(sim.ref || '')} · ${esc(PAY_KIND[sim.kind] || '')}</span>
+      <div class="note">This is the preview, so no money moves. On the live site this opens Stripe's secure checkout page, and the payment shows up here by itself when it goes through.</div>
+      <div class="form" style="grid-template-columns:1fr 1fr"><label class="field wide"><span>Card number</span><input type="text" value="4242 4242 4242 4242" disabled></label><label class="field"><span>Expiry</span><input type="text" value="12 / 34" disabled></label><label class="field"><span>CVC</span><input type="text" value="123" disabled></label></div>
+      <button class="btn grad" data-act="simPay">${sim.kind === 'hold' ? 'Place the hold' : `Pay ${money(num(sim.amount))}`}</button></aside>`;
+  },
+});
 const WRITES = new Set(['newBooking', 'quotePkg', 'budget', 'pickAdd', 'qty', 'rmLine', 'addCrew', 'crewPeople', 'rmCrew', 'deleteBooking', 'advance', 'contract', 'coiStatus', 'checkOut', 'checkIn', 'sendRequest', 'drawerAdd', 'sync', 'unsync', 'applyPoss', 'weekendToggle', 'applyReturning', 'fundUp', 'fundBuy', 'fundUnbuy', 'fundAdd', 'fundRemove']);
 const ACT = {
-  nav(el) { if (state.dirty) flushSave(); state.view = el.dataset.v; state.drawer = null; render(); window.scrollTo(0, 0); },
+  nav(el) { if (state.dirty) flushSave(); const v = el.dataset.v; if (!allowedView(v)) return; state.view = v; state.drawer = null; if (v === 'mine') state.portal.id = null; if (v === 'storefront') loadHolds(); render(); window.scrollTo(0, 0); },
+  demoRole(el) { if (MODE !== 'preview') return; state.drawer = null; BE.auth.setRole(el.dataset.r); },
+  authOpen(el) { state.auth = Object.assign(state.auth, { mode: (el && el.dataset && el.dataset.m) || 'in', msg: '', busy: false }); state.drawer = { kind: 'auth' }; renderDrawer(); focusFirst(); },
+  authMode(el) { state.auth.mode = el.dataset.m; state.auth.msg = ''; renderDrawer(); focusFirst(); },
+  async authSubmit() {
+    const a = state.auth; if (a.busy) return;
+    const email = String(a.email || '').trim(); const pw = a.password || '';
+    if (a.mode !== 'newpw' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { a.msg = 'Enter your email address.'; a.tone = 'bad'; renderDrawer(); focusFirst(); return; }
+    if ((a.mode === 'up' || a.mode === 'newpw') && pw.length < 8) { a.msg = 'Use at least 8 characters for the password.'; a.tone = 'bad'; renderDrawer(); return; }
+    if (a.mode === 'in' && !pw) { a.msg = 'Enter your password.'; a.tone = 'bad'; renderDrawer(); return; }
+    a.busy = true; a.msg = ''; renderDrawer();
+    const done = (msg) => { a.then = null; state.drawer = null; a.password = ''; toast(msg); };
+    try {
+      if (a.mode === 'in') { await BE.auth.signIn(email, pw); done('Signed in.'); }
+      else if (a.mode === 'up') { const r = await BE.auth.signUp(email, pw, String(a.name || '').trim()); if (r && r.needsConfirm) a.mode = 'check'; else done('Your account is ready.'); }
+      else if (a.mode === 'reset') { await BE.auth.reset(email); a.mode = 'check'; }
+      else if (a.mode === 'newpw') { await BE.auth.setPassword(pw); done('Password saved.'); }
+    } catch (e) { a.msg = authMsg(e); a.tone = 'bad'; }
+    a.busy = false; renderDrawer();
+  },
+  async authMagic() {
+    const a = state.auth; const email = String(a.email || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { a.msg = 'Enter your email address first.'; a.tone = 'bad'; renderDrawer(); focusFirst(); return; }
+    try { await BE.auth.magic(email); a.mode = 'check'; a.msg = ''; } catch (e) { a.msg = authMsg(e); a.tone = 'bad'; }
+    renderDrawer();
+  },
+  acctMenu() { state.drawer = { kind: 'acct' }; renderDrawer(); focusFirst(); },
+  async signOut() { state.drawer = null; try { await BE.auth.signOut(); toast('Signed out.'); } catch (e) { toast((e && e.message) || 'Could not sign out.'); } },
+  portal(el) { state.view = 'mine'; state.portal.id = el.dataset.id || null; state.sign = { name: (state.user && state.user.name) || '', consent: false, drawn: false, busy: false, dataUrl: '' }; state.upload = {}; render(); window.scrollTo(0, 0); },
+  jump(el) { const t = document.getElementById(el.dataset.to); if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'start' }); const f = t.querySelector('input,button,canvas'); if (f) setTimeout(() => f.focus({ preventScroll: true }), 400); } },
+  async clientCancel(el) { try { await BE.rpc('client_cancel', { p_id: el.dataset.id }); toast('Request cancelled.'); loadHolds(true); } catch (e) { toast((e && e.message) || 'That did not go through.'); } },
+  sigClear() { state.sign.drawn = false; state.sign.dataUrl = ''; const c = $('#sigPad'); if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height); },
+  async clientSign(el) {
+    const b = state.bookings.find((x) => x.id === el.dataset.id); const sg = state.sign; if (!b || sg.busy) return;
+    if (String(sg.name || '').trim().length < 2) { toast('Type your full name.'); const n = $('#sg-name'); if (n) n.focus(); return; }
+    if (!sg.drawn || !sg.dataUrl) { toast('Draw your signature in the box.'); return; }
+    if (!sg.consent) { toast('Tick the box to agree to sign electronically.'); return; }
+    sg.busy = true; render();
+    try {
+      const hash = await sha256hex(b.contract.text);
+      await BE.rpc('client_sign', { p_id: b.id, p_name: sg.name.trim(), p_signature: sg.dataUrl, p_hash: hash, p_consent: true });
+      state.sign = { name: '', consent: false, drawn: false, busy: false, dataUrl: '' }; toast('Signed. Thank you.');
+    } catch (e) { sg.busy = false; toast((e && e.message) || 'That did not sign. Try again.'); }
+    render();
+  },
+  async uploadDoc(el) {
+    const kind = el.dataset.kind; const u = state.upload; const f = u[kind];
+    if (!f) { toast('Choose the file first.'); return; }
+    if (!state.user) { ACT.authOpen(); return; }
+    u.busy = kind; render();
+    try {
+      const up = await BE.files.clientDoc(f, state.user.id);
+      await BE.rpc('client_add_doc', { p_kind: kind, p_file: up.path, p_name: up.name, p_expires: u[kind + 'Exp'] || null, p_booking: el.dataset.id || null });
+      state.upload = {}; toast(kind === 'coi' ? 'Certificate sent. We will check it and let you know.' : 'ST-121 sent. Thank you.');
+    } catch (e) { u.busy = ''; toast((e && e.message) || 'That upload did not work. Try again.'); }
+    render();
+  },
+  async saveProfile() {
+    const f = state.profile || {};
+    try { await BE.rpc('client_save_profile', { p: f }); state.profile = null; toast('Saved.'); } catch (e) { toast((e && e.message) || 'That did not save.'); }
+  },
   openBooking(el) { state.tab = el.dataset.tab || (state.view === 'booking' ? state.tab : 'plan'); openBooking(el.dataset.id); },
   async newBooking() { const b = newBooking(); state.tab = 'plan'; await createBooking(b, true); },
   async quotePkg(el) { const b = newBooking(); addPackageTo(b, el.dataset.id); if (el.dataset.crew) { const op = crewFor(el.dataset.id); if (op) addCrewTo(b, op.role); } state.tab = 'plan'; await createBooking(b, true); },
@@ -1255,6 +2159,108 @@ const ACT = {
     const after = $('.tabs'); if (before != null && after) window.scrollBy(0, after.getBoundingClientRect().top - before);
   },
   bkFilter(el) { state.bk.filter = el.dataset.f; render(); },
+  payMethod(el) { state.pay.method = el.dataset.m; render(); },
+  icsJob(el) { const b = state.bookings.find((x) => x.id === el.dataset.id) || state.draft; if (!b) return; saveFile(`${b.ref}.ics`, icsDoc(calEvents(b, state.role !== 'admin'), `${b.project || b.ref}`)); },
+  icsAll() { const t = todayStr(); const list = state.bookings.filter((b) => b.status !== 'cancelled' && b.pickup && b.returnDate && b.returnDate >= addDays(t, -30)); if (!list.length) { toast('No jobs to add yet.'); return; } saveFile(`${slug(state.settings.company || 'jobs')}-schedule.ics`, icsDoc([].concat(...list.map((b) => calEvents(b, false))), `${state.settings.company} jobs`)); },
+  async feedMake() { const a = new Uint8Array(24); crypto.getRandomValues(a); const token = Array.from(a).map((x) => x.toString(16).padStart(2, '0')).join(''); try { await db.doc('secrets/calendar').set({ token, createdAt: new Date().toISOString() }); toast('Calendar link ready. Any older link stops working.'); } catch (e) { writeError(e); } },
+  moneyPeriod(el) { state.money.period = num(el.dataset.p); render(); },
+  moneyAll() { state.money.all = true; render(); },
+  fundSuggest(el) { const it = state.cat.byId[el.dataset.id]; if (!it) return; const c = costOf(it); state.fundAdd = { name: `Another ${it.name}`, cost: c ? String(Math.round(c.v / Math.max(1, it.qty))) : '' }; state.view = 'fund'; render(); const n = $('#fund-cost'); if (n) { n.scrollIntoView({ block: 'center' }); n.focus(); } toast('Check the price, then press Add.'); },
+  clientOpen(el) { state.docAdd = null; state.drawer = { kind: 'client', key: el.dataset.k }; renderDrawer(); focusFirst(); },
+  async docStatus(el) {
+    const r = clientIndex().find((x) => x.key === el.dataset.k); if (!r || !r.rec) return; const rec = recFor(r);
+    rec.data.docs = (rec.data.docs || []).map((x) => (x.id === el.dataset.d ? Object.assign({}, x, { status: el.dataset.s, checkedAt: new Date().toISOString() }) : x));
+    try { await saveRec(rec); toast(el.dataset.s === 'ok' ? 'Accepted.' : 'Marked not accepted.'); } catch (e) { writeError(e); }
+  },
+  async docAdd(el) {
+    const r = clientIndex().find((x) => x.key === el.dataset.k); const f = state.docAdd; if (!r || !f) return;
+    const rec = recFor(r); const entry = { id: 'd' + Date.now().toString(36) + uid6(), kind: f.kind, name: f.file ? f.file.name : '', expires: f.expires || '', insurer: f.insurer || '', limit: f.limit ? num(f.limit) : '', status: 'ok', from: 'team', at: new Date().toISOString() };
+    try {
+      if (f.file) {
+        if (MODE === 'claude') { if (!assetsNs) throw { message: 'Files need upload access to this page.' }; const a = await assetsNs.upload(f.file); entry.url = a.url; }
+        else { const up = await BE.files.clientDoc(f.file, (r.rec && r.rec.uid) || 'team'); entry.file = up.path; }
+      }
+      rec.data.docs = (rec.data.docs || []).concat([entry]); await saveRec(rec); state.docAdd = null; toast('Added.'); renderDrawer();
+    } catch (e) { toast((e && e.message) || 'That did not save.'); }
+  },
+  useCoi(el) {
+    const r = clientIndex().find((x) => x.key === el.dataset.k); const b = state.draft; if (!r || !r.coi || !b) return; const d = r.coi;
+    b.coi = Object.assign({}, b.coi, { status: d.status === 'ok' ? 'received' : (b.coi && b.coi.status) === 'verified' ? 'verified' : 'received', insurer: d.insurer || (b.coi && b.coi.insurer) || '', equipLimit: d.limit || (b.coi && b.coi.equipLimit) || '', expires: d.expires || '', file: d.file || '', docId: d.id });
+    scheduleSave(0); render(); toast('Certificate on file added. Check the list, then mark it verified.');
+  },
+  useSt121(el) { const r = clientIndex().find((x) => x.key === el.dataset.k); const b = state.draft; if (!r || !r.st121 || !b) return; b.tax = Object.assign({}, b.tax, { exempt: true, cert: r.st121.status === 'ok', certFile: r.st121.file || '', certDocId: r.st121.id }); scheduleSave(0); render(); toast(r.st121.status === 'ok' ? 'ST-121 on file: no sales tax.' : 'ST-121 added. Check it, then tick it.'); },
+  async teamAdd() {
+    const em = normKey(state.teamAdd.email); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter their email address.'); return; }
+    try { await db.doc('team/' + docKey(em)).set({ email: em, name: String(state.teamAdd.name || '').trim(), addedAt: new Date().toISOString(), addedBy: (state.user && state.user.email) || '' }); state.teamAdd = { email: '', name: '' }; toast(`${em} is on the team. They sign up with that email to get in.`); render(); } catch (e) { writeError(e); }
+  },
+  async teamRemove(el) { const em = el.dataset.e; if (normKey(em) === normKey(state.user && state.user.email) && !confirm('Remove yourself from the team? You will lose access to the desk.')) return; try { await db.doc('team/' + docKey(em)).delete(); toast(`${em} is off the team.`); } catch (e) { toast((e && e.message) || 'That did not save.'); } },
+  async photoRemove(el) { const id = el.dataset.id; const list = photosOf(id).slice(); const [gone] = list.splice(num(el.dataset.i), 1); try { await savePhotos(id, list); await dropPhoto(gone && gone.ref); toast('Photo removed.'); } catch (e) { writeError(e); } render(); },
+  async photoCover(el) { const id = el.dataset.id; const list = photosOf(id).slice(); const [x] = list.splice(num(el.dataset.i), 1); list.unshift(x); try { await savePhotos(id, list); } catch (e) { writeError(e); } render(); },
+  labelsOpen(el) { const id = el && el.dataset && el.dataset.id; state.label = Object.assign({}, state.label, { scope: id ? 'item:' + id : state.label.scope.startsWith('item:') ? 'all' : state.label.scope }); state.drawer = { kind: 'labels' }; renderDrawer(); focusFirst(); },
+  labelsPrint() {
+    if (typeof qrcode !== 'function') { toast('The QR code maker did not load. Reload the page and try again.'); return; }
+    const html = labelSheetHtml(labelItems(), state.label.size);
+    if (MODE === 'claude') { saveFile(`gear-labels-${todayStr()}.html`, html); return; }
+    const w = window.open('', '_blank'); if (!w) { saveFile(`gear-labels-${todayStr()}.html`, html); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  },
+  scanStart() { const b = state.draft; if (!b) return; state.scan = { dir: b.status === 'out' ? 'back' : 'out', last: '', lastAt: 0, stream: null, timer: null }; state.drawer = { kind: 'scan' }; renderDrawer(); startCamera(); const m = $('#scanManual'); if (m && !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) m.focus(); },
+  scanStop() { stopCamera(); state.scan = null; state.drawer = null; render(); },
+  scanManual() { const inp = $('#scanManual'); const hit = parseScan(inp && inp.value); if (!hit) { toast('Type an ID like S-ELE-100.'); return; } if (tickUnit(hit.id, hit.unit) && inp) { inp.value = ''; inp.focus(); } },
+  scanPick(el) { state.drawer = null; state.tab = 'handoff'; openBooking(el.dataset.id); tickUnit(el.dataset.item, num(el.dataset.u)); },
+  copyText(el) { copy(el.dataset.t, 'Copied.'); },
+  async payCard(el) {
+    const b = state.bookings.find((x) => x.id === el.dataset.id); if (!b || state.pay.busy) return;
+    const kind = el.dataset.kind; const due = amountDue(b);
+    const amount = kind === 'hold' ? num((b.bill || {}).repl) : Math.max(0, round2(due.amount - due.pending));
+    if (MODE === 'preview') { state.pay.sim = { id: b.id, kind, amount, ref: b.ref }; state.drawer = { kind: 'paysim' }; renderDrawer(); focusFirst(); return; }
+    state.pay.busy = true; render();
+    try { const r = await BE.fn('stripe-checkout', { bookingId: b.id, kind }); if (r && r.url) { location.href = r.url; return; } throw { message: 'Checkout did not open. Try again.' }; }
+    catch (e) { toast((e && e.message) || 'Card payments are not available right now. Try Venmo or Zelle, or try again later.'); }
+    state.pay.busy = false; render();
+  },
+  async simPay() {
+    const sim = state.pay.sim; if (!sim) return;
+    try { await BE.rpc('demo_card_paid', { p_id: sim.id, p_kind: sim.kind, p_amount: sim.amount }); state.drawer = null; state.pay.sim = null; toast(sim.kind === 'hold' ? 'The card hold is placed (simulated).' : `Paid ${money(sim.amount)} (simulated).`); }
+    catch (e) { toast((e && e.message) || 'That did not go through.'); }
+    render();
+  },
+  async payReport(el) {
+    const b = state.bookings.find((x) => x.id === el.dataset.id); if (!b || state.pay.busy) return;
+    const due = amountDue(b); const amount = state.pay.for === b.id && state.pay.amount !== '' ? num(state.pay.amount) : round2(due.amount - due.pending);
+    if (!(amount > 0)) { toast('Enter the amount you sent.'); return; }
+    state.pay.busy = true; render();
+    try { await BE.rpc('client_report_payment', { p_id: b.id, p_method: el.dataset.m, p_kind: due.kind === 'deposit' ? 'deposit' : 'balance', p_amount: amount, p_note: state.pay.note || '' }); state.pay = Object.assign(state.pay, { amount: '', note: '', for: null }); toast('Thanks. We will confirm it as soon as it lands.'); }
+    catch (e) { toast((e && e.message) || 'That did not go through. Try again.'); }
+    state.pay.busy = false; render();
+  },
+  async payRecord() {
+    const b = state.draft; if (!b) return; const r = state.payRec; const due = amountDue(b);
+    const amount = r.amount !== '' ? num(r.amount) : Math.max(0, due.amount);
+    if (!(amount > 0)) { toast('Enter the amount.'); return; }
+    const pay = { id: 'p' + Date.now().toString(36) + uid6(), bookingId: b.id, ref: b.ref, method: r.method, kind: r.kind, amount: round2(amount), status: 'received', note: r.note || '', at: new Date().toISOString(), by: state.uid || null, byName: (state.user && (state.user.name || state.user.email)) || '' };
+    if (await writePayment(pay)) { state.payRec = { method: r.method, kind: 'balance', amount: '', note: '' }; toast(`${money(amount)} recorded.`); render(); }
+  },
+  async payConfirm(el) {
+    const p = state.payments.find((x) => x.id === el.dataset.p); if (!p) return;
+    const next = Object.assign({}, p, { status: 'received', receivedAt: new Date().toISOString(), receivedBy: state.uid || null });
+    if (await writePayment(next)) { toast(`${money(num(p.amount))} confirmed.`); render(); }
+  },
+  async payReject(el) {
+    const p = state.payments.find((x) => x.id === el.dataset.p); if (!p) return;
+    if (await writePayment(Object.assign({}, p, { status: 'void', voidAt: new Date().toISOString() }))) { toast('Marked as not received.'); render(); }
+  },
+  async holdAct(el) {
+    const p = state.payments.find((x) => x.id === el.dataset.p); if (!p) return; const action = el.dataset.a;
+    const amount = action === 'capture' ? num(state.holdAmt) : 0;
+    if (action === 'capture' && !(amount > 0 && amount <= num(p.amount))) { toast(`Enter an amount up to ${money(num(p.amount))} to charge.`); return; }
+    if (MODE === 'live' && p.stripe && p.stripe.intent) {
+      try { await BE.fn('stripe-hold', { paymentId: p.id, action, amount }); state.holdAmt = ''; toast(action === 'release' ? 'Hold released.' : `${money(amount)} charged from the hold.`); } catch (e) { toast((e && e.message) || 'Stripe did not take that. Try again from the Stripe dashboard.'); }
+      return;
+    }
+    const next = Object.assign({}, p, action === 'release' ? { status: 'released', releasedAt: new Date().toISOString() } : { status: 'captured', captured: amount, capturedAt: new Date().toISOString() });
+    if (await writePayment(next)) { state.holdAmt = ''; toast(action === 'release' ? 'Hold released.' : `${money(amount)} charged from the hold.`); render(); }
+  },
   calMove(el) { state.cal.start = addDays(state.cal.start, num(el.dataset.n)); render(); },
   calToday() { state.cal.start = mondayOf(todayStr()); render(); },
   invOwn(el) { state.inv.own = el.dataset.v; render(); },
@@ -1283,9 +2289,31 @@ const ACT = {
     if (to === '__handoff') { state.tab = 'handoff'; render(); return; }
     b.status = to; if (to === 'quoted' && !b.quotedAt) b.quotedAt = new Date().toISOString();
     if (to === 'confirmed') { b.confirmedAt = new Date().toISOString(); if (b.fundPct == null) b.fundPct = num(state.settings.fundPct); }
-    scheduleSave(0); render(); toast(`${b.project || b.ref} is now ${STATUS[to].label.toLowerCase()}.`);
+    const sendIt = to === 'quoted' && (!b.contract || b.contract.status === 'draft');
+    const go = () => { scheduleSave(0); render(); toast(`${b.project || b.ref} is now ${STATUS[to].label.toLowerCase()}.${sendIt ? ' The quote and agreement are in their bookings.' : ''}`); };
+    if (sendIt) snapshotAgreement(b).then(go); else go();
   },
-  contract(el) { const b = state.draft; b.contract = b.contract || {}; b.contract.status = el.dataset.s; if (el.dataset.s === 'sent' && !b.contract.sentAt) b.contract.sentAt = new Date().toISOString(); if (el.dataset.s === 'signed' && !b.contract.signedOn) b.contract.signedOn = todayStr(); scheduleSave(0); render(); },
+  async contract(el) {
+    const b = state.draft; b.contract = b.contract || {}; const to = el.dataset.s;
+    if (b.contract.signature && to !== 'signed') { state.confirmResend = true; render(); return; }
+    if (to === 'sent') await snapshotAgreement(b); else b.contract.status = to;
+    if (to === 'signed' && !b.contract.signedOn) b.contract.signedOn = todayStr();
+    scheduleSave(0); render();
+    if (to === 'sent') toast('Agreement sent. A client with an account reads and signs it under My bookings.');
+  },
+  async resendAgreement() { const b = state.draft; state.confirmResend = false; await snapshotAgreement(b); scheduleSave(0); render(); toast('The updated agreement is out for signature.'); },
+  keepSigned() { state.confirmResend = false; render(); },
+  dlSigned(el) { const b = state.bookings.find((x) => x.id === el.dataset.id) || state.draft; if (!b) return; saveFile(`${b.ref}-rental-agreement-signed.html`, signedCopy(b)); },
+  async openDoc(el) {
+    if (el.dataset.url) { window.open(el.dataset.url, '_blank', 'noopener'); return; }
+    const path = el.dataset.path; if (!path || !BE.files) { toast('Files open on the website version of the desk.'); return; }
+    const w = window.open('', '_blank');
+    try {
+      const url = await BE.files.docUrl(path);
+      if (/^data:/.test(url)) { const blob = await (await fetch(url)).blob(); const u = URL.createObjectURL(blob); if (w) w.location = u; else window.open(u, '_blank'); }
+      else if (w) w.location = url; else window.open(url, '_blank');
+    } catch (e) { if (w) w.close(); toast((e && e.message) || 'That file could not be opened.'); }
+  },
   coiStatus(el) { const b = state.draft; b.coi = b.coi || {}; b.coi.status = el.dataset.s; if (el.dataset.s === 'requested') b.coi.requestedAt = new Date().toISOString(); scheduleSave(0); render(); },
   checkOut() { const b = state.draft; b.checkout = b.checkout || { out: {}, back: {}, notes: {} }; b.checkout.outAt = new Date().toISOString(); b.checkout.outBy = state.uid || null; if (b.fundPct == null) b.fundPct = num(state.settings.fundPct); b.status = 'out'; scheduleSave(0); render(); toast(`${b.project || b.ref} is out.`); },
   checkIn() { const b = state.draft; const late = Math.max(0, diffDays(b.returnDate, todayStr())); b.checkout.inAt = new Date().toISOString(); b.checkout.inBy = state.uid || null; b.late = late ? { days: late, fee: late * chosen(b).dayRate } : null; b.status = 'returned'; scheduleSave(0); render(); toast(late ? `Back ${plural(late, 'day')} late. The late charge is on the bill.` : `${b.project || b.ref} is back.`); },
@@ -1293,13 +2321,15 @@ const ACT = {
   copyCoi() { copy(coiRequestText(state.draft), 'Request copied.'); },
   dlAgreement() { const b = state.draft; saveFile(`${b.ref}-rental-agreement.html`, standaloneDoc(`Rental agreement ${b.ref}`, agreementHTML(b))); },
   dlSchedule() { const b = state.draft; const rows = scheduleRows(b); saveFile(`${b.ref}-gear-list.csv`, toCsv([['Item ID', 'Item', 'Owner', 'Qty', 'day_rate', 'possession_rate', 'replacement_value', 'On the house'], ...rows.map((r) => [r.id, r.name, OWNERS[r.own] ? OWNERS[r.own].name : '', r.qty, r.day, r.poss, r.repl, r.comped ? 'yes' : ''])])); },
-  dlPoolSchedule() { const rows = state.cat.items.filter((i) => i.qty > 0); saveFile(`equipment-schedule-${todayStr()}.csv`, toCsv([['Item ID', 'Item', 'Category', 'Owner', 'Qty', 'Value each', 'Value total', 'Kit group', 'Serial number', 'Notes'], ...rows.map((i) => [i.id, i.name, i.cat, OWNERS[i.own] ? OWNERS[i.own].name : '', i.qty, i.resale || 0, (i.resale || 0) * i.qty, i.kit, '', i.resale ? '' : 'Value carried by the kit line'])])); },
+  dlPoolSchedule() { const rows = state.cat.items.filter((i) => i.qty > 0); saveFile(`equipment-schedule-${todayStr()}.csv`, toCsv([['Item ID', 'Item', 'Category', 'Owner', 'Qty', 'Value each', 'Value total', 'Kit group', 'Serial number', 'Notes'], ...rows.map((i) => [i.id, i.name, i.cat, OWNERS[i.own] ? OWNERS[i.own].name : '', i.qty, i.resale || 0, (i.resale || 0) * i.qty, i.kit, serialsList(i.id).filter(Boolean).join('; '), i.resale ? '' : 'Value carried by the kit line'])])); },
   storeGroup(el) { state.store.group = el.dataset.g; render(); },
   cart(el) { const k = el.dataset.k; const st = state.store; const i = st.cart.findIndex((c) => c.key === k); if (i >= 0) st.cart.splice(i, 1); else st.cart.push({ key: k, qty: 1, crew: false }); st.sent = ''; render(); },
   uncart(el) { state.store.cart.splice(num(el.dataset.i), 1); render(); },
   async sendRequest() {
     const st = state.store; const f = st.form; const S = state.settings;
     if (!storeDatesOk()) { toast('Pick a pickup date and a return date on or after it.'); return; }
+    if (!st.cart.length) { toast('Add a kit or a piece of gear first.'); return; }
+    if (state.role === 'guest' && MODE !== 'claude') { state.afterAuth = 'sendRequest'; state.auth = Object.assign(state.auth, { mode: MODE === 'live' ? 'up' : 'in', msg: '', busy: false, then: 'sendRequest' }); state.drawer = { kind: 'auth' }; renderDrawer(); focusFirst(); return; }
     if (!f.name && !f.company) { toast('Add a name or company so we know who to quote.'); return; }
     const sd = Math.max(1, num(f.shootDays, 1));
     const b = newBooking({ status: 'request', source: 'storefront', project: f.project, client: { name: f.name, company: f.company, email: f.email, phone: f.phone }, pickup: f.pickup, returnDate: f.ret, shootStart: f.pickup < f.ret ? addDays(f.pickup, 1) : f.pickup, shootDays: sd,
@@ -1307,6 +2337,11 @@ const ACT = {
     b.possessionDays = suggestPossession(b);
     st.cart.forEach((c) => { const p = state.cat.pkgById[c.key]; if (p) { addPackageTo(b, c.key); if (c.crew) { const op = crewFor(c.key); if (op) addCrewTo(b, op.role); } } else addLineTo(b, c.key, num(c.qty, 1)); });
     b.lines.forEach((l) => (l.days = sd)); (b.crew || []).forEach((c) => (c.days = sd));
+    if (state.role === 'client') {
+      try { const r = await BE.rpc('submit_request', { p: b }); st.cart = []; st.form = Object.assign({}, st.form, { project: '' }); st.sentId = r.id; st.sent = `Thanks. Request ${r.ref} is in, and a quote will follow.`; loadHolds(true); render(); }
+      catch (e) { toast((e && e.message) || 'The request did not go through. Try again.'); }
+      return;
+    }
     const ok = await createBooking(b, false);
     if (ok) { st.cart = []; st.form = Object.assign({}, st.form, { project: '' }); st.sent = `Thanks. Request ${b.ref} is in, and a quote will follow.`; render(); }
   },
@@ -1370,6 +2405,13 @@ function fieldVal(el) { if (el.type === 'radio') return el.value; if (el.dataset
 const TEXTY = new Set(['text', 'email', 'tel', 'number', 'search', 'url', 'textarea']);
 function onField(e) {
   const el = e.target; const texty = TEXTY.has(el.type) || el.tagName === 'TEXTAREA';
+  if (el.dataset.auth != null) { state.auth[el.dataset.auth] = el.value; return; }
+  if (el.dataset.sign != null) { state.sign[el.dataset.sign] = el.type === 'checkbox' ? el.checked : el.value; return; }
+  if (el.dataset.profile != null) { (state.profile = state.profile || {})[el.dataset.profile] = el.value; return; }
+  if (el.dataset.upfile != null) { if (e.type === 'change') { state.upload[el.dataset.upfile] = el.files && el.files[0] || null; render(); } return; }
+  if (el.dataset.upexp != null) { state.upload[el.dataset.upexp + 'Exp'] = el.value; return; }
+  if (el.dataset.ext != null && FIELD_EXT[el.dataset.ext]) { FIELD_EXT[el.dataset.ext](el, e, texty); return; }
+  if (e.type === 'change' && texty && el.dataset.b != null && state.draft && (el.dataset.b === 'client.email' || el.dataset.b === 'client.company')) { if (autoReturning(state.draft)) { toast(`Returning client: ${num(state.settings.returningPct)}% off applied.`); scheduleSave(); render(); } return; }
   if (e.type === 'change' && texty) return;
   if (el.type === 'range' && e.type === 'input') { const lbl = el.parentElement && el.parentElement.querySelector('b'); if (lbl) lbl.textContent = el.value + '%'; if (el.dataset.s) { state.settings[el.dataset.s] = num(el.value); saveSettingsSoon(); } return; }
   const full = !texty; const d = state.draft;
@@ -1382,7 +2424,7 @@ function onField(e) {
       (d.lines || []).forEach((l) => { if (num(l.days) === prev) l.days = nv; }); (d.crew || []).forEach((c) => { if (num(c.days) === prev) c.days = nv; });
       el.dataset.prev = String(nv);
     }
-    if (path === 'discount.kind') { const S = state.settings; const p = { student: S.studentPct, returning: S.returningPct, referral: S.referralPct }[v]; d.discount.pct = p != null ? num(p) : v === 'none' ? 0 : num(d.discount.pct); }
+    if (path === 'discount.kind') { d.returningChecked = true; const S = state.settings; const p = { student: S.studentPct, returning: S.returningPct, referral: S.referralPct }[v]; d.discount.pct = p != null ? num(p) : v === 'none' ? 0 : num(d.discount.pct); }
     scheduleSave(); full ? render() : refreshDerived(); return;
   }
   if (el.dataset.line != null && d) { const ln = d.lines[num(el.dataset.line)]; const f = el.dataset.f; if (!ln) return; ln[f] = f === 'comp' ? el.checked : f === 'tier' ? el.value : f === 'rate' ? (el.value === '' ? null : num(el.value)) : num(el.value); scheduleSave(); full ? render() : refreshDerived(); return; }
@@ -1401,6 +2443,48 @@ function onField(e) {
   if (el.dataset.home != null) { setHomePref(el.checked ? 'today' : 'welcome'); toast(el.checked ? 'The desk will open on Today.' : 'The desk will open on Start.'); return; }
   if (el.dataset.fund != null) { state.fundAdd[el.dataset.fund] = el.value; return; }
   if (el.dataset.buyprice != null) { state.buyPrice[el.dataset.buyprice] = el.value; }
+}
+const FIELD_EXT = {
+  clientsq(el) { state.clientsQ = el.value; const host = $('main .view'); if (host) { render(); const q = $('#cl-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } } },
+  docadd(el) { const f = state.docAdd = state.docAdd || { kind: 'coi' }; f[el.dataset.k] = el.type === 'file' ? (el.files && el.files[0]) || null : el.value; if (el.dataset.k === 'kind' || el.type === 'file') renderDrawer(); },
+  clientnote(el, e) {
+    if (e.type !== 'change') return; const r = clientIndex().find((x) => x.key === el.dataset.k); if (!r) return;
+    const rec = recFor(r); rec.data.notes = el.value; saveRec(rec).then(() => toast('Notes saved.'), writeError);
+  },
+  teamadd(el) { state.teamAdd[el.dataset.k] = el.value; },
+  sheetlink(el, e) { if (e.type !== 'change') return; const url = el.value.trim(); if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { toast('That should be the Apps Script link, starting https://script.google.com/.'); return; } db.doc('secrets/sheet').set({ url, updatedAt: new Date().toISOString() }).then(() => toast('Sheet link saved.'), writeError); },
+  privatefile(el, e) { if (e.type !== 'change') return; const f = el.files && el.files[0]; el.value = ''; if (f) loadPrivateFile(f); },
+  photos(el, e) { if (e.type !== 'change') return; const files = Array.from(el.files || []); el.value = ''; addPhotos(el.dataset.id, files); },
+  gear(el) {
+    const id = el.dataset.id; const k = el.dataset.k; const g = state.gear[id] = Object.assign({ itemId: id, serials: [] }, state.gear[id]);
+    if (k === 'serial') { const list = (g.serials || []).slice(); list[num(el.dataset.n)] = el.value.trim(); g.serials = list; }
+    else if (k === 'serials') g.serials = el.value.split('\n').map((x) => x.trim());
+    else if (k === 'paid') g.paid = el.value === '' ? null : num(el.value);
+    else g[k] = el.value;
+    saveGearSoon(id);
+  },
+  label(el) { const k = el.dataset.k; state.label[k] = el.type === 'checkbox' ? el.checked : el.value; renderDrawer(); },
+  scanid(el, e) { if (e.type === 'change') ACT.scanManual(); },
+  pay(el) { state.pay[el.dataset.k] = el.value; if (el.dataset.for) state.pay.for = el.dataset.for; },
+  payrec(el) { state.payRec[el.dataset.k] = el.value; },
+  holdamt(el) { state.holdAmt = el.value; },
+};
+/* The team's full rate card, loaded once from rate-card.private.json. The stripped copy the storefront reads is
+   written at the same time, so rates stay the same on both sides. */
+function publicCatalog(src) {
+  const keep = (n) => (/RATE IS PER LENS/.test(n || '') ? 'RATE IS PER LENS.' : /^Transport/.test(n || '') ? 'Transport, not billed.' : '');
+  return { asOf: src.asOf, rows: src.rows.map((r) => [r[0], r[1], r[2], r[3], r[4], r[5], null, null, r[8], null, '', '', keep(r[12]), '', null]), packages: src.packages, labor: (src.labor || []).map((l) => [l[0], l[1], null, l[3], null, '']), laborRules: src.laborRules || [] };
+}
+async function publishPublicCatalog(src) { if (MODE !== 'live' || !db) return; await db.doc('catalog/public').set({ payload: JSON.stringify(publicCatalog(src)), syncedAt: new Date().toISOString() }); }
+async function loadPrivateFile(f) {
+  let data = null;
+  try { data = JSON.parse(await f.text()); } catch (_) { toast('That file is not the rate card export. Make it with tools/export-private.js.'); return; }
+  if (!data || !Array.isArray(data.rows) || data.rows.length < 10 || !Array.isArray(data.packages)) { toast('That file does not look like the full rate card.'); return; }
+  try {
+    await db.doc('private/snapshot').set({ payload: JSON.stringify(data), asOf: data.asOf || '', loadedAt: new Date().toISOString(), loadedBy: (state.user && state.user.email) || '' });
+    await publishPublicCatalog(data);
+    toast(`Full rate card loaded: ${plural(data.rows.length, 'item')}.`);
+  } catch (e) { writeError(e); }
 }
 let settingsTimer = null, settingsPending = false;
 function saveSettingsSoon() {
@@ -1421,17 +2505,23 @@ function parseInventory(values) {
   ]);
 }
 async function syncFromSheet() {
-  if (!mcpNs || !db || !SNAPSHOT.sheetId) return;
+  if (!db || !SNAP.sheetId && !(state.secrets.sheet && state.secrets.sheet.url)) return;
   state.syncing = true; state.syncMsg = ''; render();
-  const get = (range) => mcpNs.callTool('Google Sheets', 'get_values', { spreadsheetId: SNAPSHOT.sheetId, range }, { cache: false });
+  const get = (range) => mcpNs.callTool('Google Sheets', 'get_values', { spreadsheetId: SNAP.sheetId, range }, { cache: false });
   try {
-    const [inv, pk, lb] = await Promise.all([get('Inventory!A1:Q500'), get('Packages!A1:H20'), get('Labor!A1:F20')]);
+    let inv, pk, lb;
+    if (MODE === 'live') {
+      const res = await fetch(state.secrets.sheet.url, { redirect: 'follow' }); if (!res.ok) throw new Error(`The sheet link answered ${res.status}. Check the Apps Script is deployed for anyone.`);
+      const j = await res.json(); if (j.error) throw new Error(j.error);
+      [inv, pk, lb] = [{ payload: { values: j.inventory } }, { payload: { values: j.packages } }, { payload: { values: j.labor } }];
+    } else [inv, pk, lb] = await Promise.all([get('Inventory!A1:Q500'), get('Packages!A1:H20'), get('Labor!A1:F20')]);
     const rows = parseInventory(valuesOf(inv));
     const packages = valuesOf(pk).filter((r) => /^PKG-/.test(String(r[0] || ''))).map((r) => [r[0], r[1], r[2], r[3] || '']);
     const labor = valuesOf(lb).slice(1).filter((r) => r[0] && numOrNull(r[3]) != null).map((r) => [r[0], r[1], num(r[2]), num(r[3]), num(r[4]), r[5] || '']);
     if (rows.length < 10 || !packages.length || !labor.length) throw new Error('The sheet came back with fewer rows than expected, so nothing was changed.');
     const doc = { rows, packages, labor, asOf: todayStr(), syncedAt: new Date().toISOString(), syncedBy: state.uid || null };
     await db.doc('catalog/current').set({ payload: JSON.stringify(doc), syncedAt: doc.syncedAt });
+    await publishPublicCatalog(Object.assign({}, SNAP, doc));
     state.syncMsg = `Synced ${rows.length} items, ${packages.length} kits and ${labor.length} crew rates.`;
   } catch (e) {
     const code = e && e.code;
@@ -1448,13 +2538,133 @@ async function syncFromSheet() {
 }
 
 /* ================= boot ================= */
-/* On claude.ai the viewer supplies window.claude. As a plain website, src/local-runtime.js supplies SGP_LOCAL instead. */
-const HOSTED = !!(window.claude && typeof window.claude.use === 'function');
-function use(name) { if (HOSTED) return window.claude.use(name).catch(() => null); const L = window.SGP_LOCAL; return Promise.resolve((L && L[name]) || null); }
+function use(name) { return HOSTED ? window.claude.use(name).catch(() => null) : Promise.resolve(null); }
+function applySources() {
+  let base = SNAPSHOT;
+  if (state.role === 'admin' && state.privateDoc && state.privateDoc.payload) { try { const p = JSON.parse(state.privateDoc.payload); if (p && Array.isArray(p.rows) && p.rows.length) base = p; } catch (_) { /* keep the public card */ } }
+  applySnapshotMeta(base);
+  applyCatalog();
+}
 function applyCatalog() {
-  let src = SNAPSHOT;
-  if (state.catalogDoc && state.catalogDoc.payload) { try { const p = JSON.parse(state.catalogDoc.payload); if (p.rows && p.rows.length) src = Object.assign({ source: 'sheet' }, p); } catch (_) { /* keep snapshot */ } }
+  let src = SNAP;
+  const doc = state.role === 'admin' || MODE === 'claude' ? state.catalogDoc : state.catalogPublic;
+  if (doc && doc.payload) { try { const p = JSON.parse(doc.payload); if (p.rows && p.rows.length) src = Object.assign({}, SNAP, { source: state.role === 'admin' ? 'sheet' : 'snapshot' }, p); } catch (_) { /* keep snapshot */ } }
   state.cat = buildCatalog(src);
+}
+const docsOf = (snap) => snap.docs.filter((x) => x.exists).map((x) => Object.assign({}, x.data(), { id: x.id }));
+const byKey = (snap, key) => Object.fromEntries(snap.docs.filter((x) => x.exists).map((x) => { const d = x.data(); return [(key && d[key]) || x.id, Object.assign({ _id: x.id }, d)]; }));
+function subscribe() {
+  const d = db;
+  d.collection('bookings').onSnapshot((snap) => {
+    state.bookings = docsOf(snap);
+    state.dbState = 'ready';
+    if (state.view === 'booking' && state.draft) {
+      const fresh = state.bookings.find((b) => b.id === state.draft.id);
+      if (!fresh && !state.dirty && !saving && !snap.metadata.hasPendingWrites && !snap.metadata.fromCache) { state.draft = null; state.view = state.role === 'admin' ? 'bookings' : homeFor(state.role); toast('That job was deleted.'); }
+      else if (fresh && !state.dirty && !saving && stable(fresh) !== stable(state.draft)) state.draft = clone(fresh);
+    }
+    processRoute();
+    requestRender();
+  }, () => { state.dbState = 'error'; requestRender(); });
+  d.doc('settings/company').onSnapshot((s) => { if (s.exists && !settingsPending) state.settings = Object.assign({}, DEFAULTS, s.data()); requestRender(); }, () => {});
+  d.doc('catalog/current').onSnapshot((s) => { state.catalogDoc = s.exists ? s.data() : null; applyCatalog(); requestRender(); }, () => {});
+  d.doc('fund/plan').onSnapshot((s) => { state.fundPlan = Object.assign({ order: [], bought: {}, extra: [] }, s.exists ? s.data() : {}); requestRender(); }, () => {});
+  d.collection('payments').onSnapshot((s) => { state.payments = docsOf(s); requestRender(); }, () => {});
+  d.collection('photos').onSnapshot((s) => { state.photos = Object.fromEntries(Object.values(byKey(s, 'itemId')).map((x) => [x.itemId || x._id, x.list || []])); requestRender(); }, () => {});
+  d.collection('gear').onSnapshot((s) => { state.gear = byKey(s, 'itemId'); requestRender(); }, () => {});
+  d.collection('clients').onSnapshot((s) => { state.clientRecs = byKey(s); requestRender(); }, () => {});
+  if (MODE === 'claude') return;
+  d.doc('catalog/public').onSnapshot((s) => { state.catalogPublic = s.exists ? s.data() : null; applyCatalog(); requestRender(); }, () => {});
+  d.collection('team').onSnapshot((s) => { state.team = docsOf(s).map((t) => Object.assign({ email: t.id }, t)); requestRender(); }, () => {});
+  d.doc('private/snapshot').onSnapshot((s) => { state.privateDoc = s.exists ? s.data() : null; applySources(); requestRender(); }, () => {});
+  d.collection('secrets').onSnapshot((s) => { state.secrets = byKey(s); requestRender(); }, () => {});
+}
+/* Who is this? The team is whoever the database says is an admin; everyone else signed in is a client. */
+async function resolveRole() {
+  let role = 'guest';
+  if (MODE === 'claude') role = 'admin';
+  else if (MODE === 'preview') role = BE.auth.role();
+  else if (state.user) { try { role = (await BE.rpc('is_admin')) ? 'admin' : 'client'; } catch (_) { role = 'client'; } }
+  const was = state.role; state.role = role; state.uid = state.user ? state.user.id : state.uid;
+  if (role !== was) {
+    if (role === 'client' && MODE === 'live') BE.rpc('claim_my_bookings').catch(() => {});
+    if (!allowedView(state.view) || state.view === 'booking' && role !== 'admin') state.view = state.view === 'storefront' && role !== 'admin' ? 'storefront' : homeFor(role);
+    if (role !== 'admin') { state.touring = false; state.draft = null; }
+    state.drawer = state.drawer && state.drawer.kind === 'auth' && role === 'guest' ? state.drawer : null;
+    applySources();
+  }
+  loadHolds(true);
+  processRoute();
+  requestRender();
+  if (state.afterAuth && role !== 'guest') { const next = state.afterAuth; state.afterAuth = null; state.auth.then = null; if (next === 'sendRequest') setTimeout(() => ACT.sendRequest(), 50); }
+}
+async function onAuth(event, user) {
+  state.user = user || null;
+  if (event === 'PASSWORD_RECOVERY') { state.auth = Object.assign(state.auth, { mode: 'newpw', msg: '', tone: '' }); state.drawer = { kind: 'auth' }; }
+  await resolveRole();
+}
+let holdsAt = 0;
+async function loadHolds(force) {
+  if (state.role === 'admin' || MODE === 'claude' || !BE.rpc) return;
+  if (!force && Date.now() - holdsAt < 60000) return;
+  holdsAt = Date.now(); const t = todayStr();
+  try { state.holdsPublic = (await BE.rpc('busy_holds', { p_from: addDays(t, -7), p_to: addDays(t, 390) })) || []; requestRender(); } catch (_) { /* availability stays unknown */ }
+}
+async function connect() {
+  if (MODE === 'claude') {
+    use('downloads').then((d) => { downloadsNs = d; state.canDownload = !!d; if (d) requestRender(); });
+    use('mcp').then((m) => { mcpNs = m; state.mcpReady = !!m; if (m) requestRender(); });
+    use('assets').then((a) => { assetsNs = a; if (a) requestRender(); });
+    use('user').then(async (u) => {
+      userNs = u; if (!u) return;
+      try { state.uid = await u.id(); } catch (_) { /* no id */ }
+      try { const w = await u.can('data.write'); state.canWrite = w; if (w === false) state.readOnly = true; } catch (_) { /* unknown */ }
+      requestRender();
+    });
+    const d = await use('db'); db = d; BE.db = d;
+    if (!d) { state.dbState = 'off'; requestRender(); return; }
+    subscribe(); return;
+  }
+  if (MODE === 'preview') Object.assign(BE, LOCAL, { mode: MODE });
+  else {
+    try { Object.assign(BE, await window.SGP_LIVE, { mode: MODE }); }
+    catch (e) { state.dbState = 'off'; state.liveError = (e && e.message) || 'The site could not reach its database.'; requestRender(); return; }
+  }
+  BE.siteUrl = BE.siteUrl || (window.SGP_CONFIG && window.SGP_CONFIG.siteUrl) || (location.origin + location.pathname);
+  downloadsNs = (window.SGP_LOCAL && window.SGP_LOCAL.downloads) || null; state.canDownload = !!downloadsNs;
+  db = BE.db;
+  BE.auth.onChange(onAuth);
+  try { state.user = await BE.auth.current(); } catch (_) { state.user = null; }
+  subscribe();
+  await resolveRole();
+}
+/* Links into the site: #scan/<item>/<unit> from a label, #paid/<job>/<kind> back from card checkout, #job/<id>, #signin. */
+function takeRoute() {
+  const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
+  if (!h || /access_token|refresh_token|error_description|type=/.test(h)) return;
+  state.pendingRoute = h;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* file: pages */ }
+  processRoute();
+}
+function processRoute() {
+  const h = state.pendingRoute; if (!h || state.dbState === 'wait') return;
+  let m;
+  if (h === 'signin' || h === 'signup') { state.pendingRoute = ''; if (state.role === 'guest') { state.auth.mode = h === 'signup' ? 'up' : 'in'; state.drawer = { kind: 'auth' }; } requestRender(); return; }
+  if ((m = h.match(/^paid\/([\w-]+)\/(\w+)$/))) {
+    if (state.role === 'guest' && MODE === 'live') return;
+    state.pendingRoute = ''; toast(m[2] === 'hold' ? 'The card hold is placed. Thank you.' : 'Payment received. Thank you.');
+    if (state.role === 'admin') { const b = state.bookings.find((x) => x.id === m[1]); if (b) { state.tab = 'handoff'; openBooking(b.id); return; } }
+    else { state.view = 'mine'; state.portal.id = m[1]; }
+    requestRender(); return;
+  }
+  if ((m = h.match(/^job\/([\w-]+)$/))) {
+    if (state.role === 'guest') { if (MODE === 'live') { state.auth.mode = 'in'; state.drawer = { kind: 'auth' }; requestRender(); } return; }
+    state.pendingRoute = '';
+    if (state.role === 'admin') { if (state.bookings.some((b) => b.id === m[1])) openBooking(m[1]); return; }
+    state.view = 'mine'; state.portal.id = m[1]; requestRender(); return;
+  }
+  if ((m = h.match(/^scan\/([A-Z?][-A-Z0-9]*?-\d+)(?:\/(\d+))?$/))) { state.pendingRoute = ''; scanRoute(m[1], num(m[2])); return; }
+  state.pendingRoute = '';
 }
 function init() {
   document.addEventListener('click', (e) => {
@@ -1465,40 +2675,17 @@ function init() {
     fn(el, e);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && state.drawer) ACT.closeDrawer();
+    if (e.key === 'Escape' && state.drawer) { if (state.drawer.kind === 'scan') ACT.scanStop(); else ACT.closeDrawer(); }
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-act][tabindex]') && !/^(BUTTON|A|INPUT)$/.test(e.target.tagName)) { e.preventDefault(); e.target.click(); }
   });
   document.addEventListener('input', onField);
   document.addEventListener('change', onField);
   document.addEventListener('focusout', () => setTimeout(() => { if (pendingRender && !editing()) render(); }, 0));
   window.addEventListener('pagehide', () => { if (state.dirty) flushSave(); });
+  window.addEventListener('hashchange', takeRoute);
+  takeRoute();
   render();
-
-  use('downloads').then((d) => { downloadsNs = d; state.canDownload = !!d; if (d) requestRender(); });
-  use('mcp').then((m) => { mcpNs = m; state.mcpReady = !!m; if (m) requestRender(); });
-  use('user').then(async (u) => {
-    userNs = u; if (!u) return;
-    try { state.uid = await u.id(); } catch (_) { /* no id */ }
-    try { const w = await u.can('data.write'); state.canWrite = w; if (w === false) state.readOnly = true; } catch (_) { /* unknown */ }
-    requestRender();
-  });
-  use('db').then((d) => {
-    db = d;
-    if (!d) { state.dbState = 'off'; requestRender(); return; }
-    d.collection('bookings').onSnapshot((snap) => {
-      state.bookings = snap.docs.filter((x) => x.exists).map((x) => Object.assign({}, x.data(), { id: x.id }));
-      state.dbState = 'ready';
-      if (state.view === 'booking' && state.draft) {
-        const fresh = state.bookings.find((b) => b.id === state.draft.id);
-        if (!fresh && !state.dirty && !saving && !snap.metadata.hasPendingWrites && !snap.metadata.fromCache) { state.draft = null; state.view = 'bookings'; toast('That job was deleted.'); }
-        else if (fresh && !state.dirty && !saving && stable(fresh) !== stable(state.draft)) state.draft = clone(fresh);
-      }
-      requestRender();
-    }, () => { state.dbState = 'error'; requestRender(); });
-    d.doc('settings/company').onSnapshot((s) => { if (s.exists && !settingsPending) state.settings = Object.assign({}, DEFAULTS, s.data()); requestRender(); }, () => {});
-    d.doc('catalog/current').onSnapshot((s) => { state.catalogDoc = s.exists ? s.data() : null; applyCatalog(); requestRender(); }, () => {});
-    d.doc('fund/plan').onSnapshot((s) => { state.fundPlan = Object.assign({ order: [], bought: {}, extra: [] }, s.exists ? s.data() : {}); requestRender(); }, () => {});
-  });
+  connect();
 }
 init();
 })();

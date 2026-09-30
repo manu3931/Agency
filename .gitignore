@@ -2,3 +2,7 @@
 dist/
 # Test screenshots and the page under test
 tests/output/
+# Installed by npm install
+node_modules/
+# The full rate card export, made from the private repo. Never commit it.
+*.private.json

@@ -4,6 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Shared Gear Pool</title>
+<meta name="description" content="Camera, lighting and grip rentals in New York. Pick your dates, add kits or single pieces, and book, sign and pay online.">
+<meta name="theme-color" content="#15161b">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="Gear Pool">
+<meta name="mobile-web-app-capable" content="yes">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shared Gear Pool">
+<meta property="og:title" content="Shared Gear Pool: camera, lighting and grip rentals in New York">
+<meta property="og:description" content="Pick your dates, add kits or single pieces, and book, sign and pay online. Weekend specials, battery-powered lighting kits and crew who run them.">
+<meta property="og:url" content="https://manu3931.github.io/Agency/">
+<meta property="og:image" content="https://manu3931.github.io/Agency/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shared Gear Pool: camera, lighting and grip rentals in New York">
+<meta name="twitter:card" content="summary_large_image">
 <!-- build:head -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,22 +31,26 @@
 </head>
 <body>
 <!-- build:body -->
+<a class="skip" href="#main">Skip to content</a>
 <header class="top">
   <div class="top-in">
     <a class="brand" href="#" data-act="nav" data-v="welcome"><span class="brand-mark" aria-hidden="true"></span><span id="brandName">Shared Gear Pool</span></a>
     <nav class="nav" id="nav" aria-label="Sections"></nav>
-    <div class="top-cta"><span class="live" id="liveDot" title="Connecting"></span><button class="btn grad sm" data-act="newBooking" type="button">New job</button></div>
+    <div class="top-cta"><span class="live" id="liveDot" title="Connecting" role="img" aria-label="Connecting"></span><span class="top-btns" id="topBtns"></span></div>
   </div>
 </header>
-<main id="main"></main>
+<main id="main" tabindex="-1"></main>
 <footer class="foot" id="footStatus"></footer>
 <div id="drawerHost"></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <!-- /build:body -->
-<!-- Standalone site only. build.py leaves these two out of the claude.ai version. -->
+<!-- Standalone site only. build.py leaves these out of the claude.ai version. -->
+<script src="src/config.js"></script>
+<script src="src/supabase-runtime.js"></script>
 <script src="src/example-booking.js"></script>
 <script src="src/local-runtime.js"></script>
 <!-- Both versions -->
+<script src="src/vendor/qrcode.js"></script>
 <script src="src/data.js"></script>
 <script src="src/app.js"></script>
 </body>
