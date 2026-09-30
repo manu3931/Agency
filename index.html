@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shared Gear Pool</title>
+<!-- build:head -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Big+Shoulders+Display:wght@600;700;800&family=Big+Shoulders+Stencil+Display:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!-- /build:head -->
+<link rel="stylesheet" href="src/app.css">
+</head>
+<body>
+<!-- build:body -->
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span class="mark" id="brandMark">SGP</span><div><b id="brandName">Shared Gear Pool</b><small>Rental desk · New York</small></div></div>
+    <nav class="nav" id="nav" aria-label="Views"></nav>
+    <div class="rail-foot" id="railFoot"></div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div id="drawerHost"></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<!-- /build:body -->
+<!-- Standalone site only. build.py leaves these two out of the claude.ai version. -->
+<script src="src/example-booking.js"></script>
+<script src="src/local-runtime.js"></script>
+<!-- Both versions -->
+<script src="src/data.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

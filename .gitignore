@@ -1,0 +1,4 @@
+# Built by build.py; publish it, don't commit it
+dist/
+# Test screenshots and the page under test
+tests/output/
