@@ -106,6 +106,22 @@ async function flows(page, name) {
   await page.click('[data-act=nav][data-v=fund]');
   await page.fill('#fund-name', 'Test light'); await page.fill('#fund-cost', '500'); await page.click('[data-act=fundAdd]'); await page.waitForTimeout(150);
   check(/Test light/.test((await page.textContent('main')) || ''), `${name}: an item can be added to the gear fund's buying list`);
+
+  await page.click('[data-act=nav][data-v=inventory]'); await page.waitForTimeout(60);
+  const secs = await page.$$eval('#invBody .sec', (e) => e.length); const rowsClosed = await page.$$eval('#invBody .g-row', (e) => e.length);
+  await page.click('#invBody .sec-btn'); await page.waitForTimeout(60);
+  const rowsOpen = await page.$$eval('#invBody .g-row', (e) => e.length);
+  check(secs >= 9 && rowsClosed === 0 && rowsOpen > 0, `${name}: Gear is ${secs} closed sections, and one opens to ${rowsOpen} pieces`);
+  await page.fill('#inv-q', 'c-stand'); await page.waitForTimeout(80);
+  const hits = await page.$$eval('#invBody .g-row', (e) => e.length);
+  await page.click('#invBody .g-row'); await page.waitForTimeout(60);
+  check(hits > 0 && !!(await page.$('.drawer')), `${name}: searching opens the matching sections (${hits} pieces) and a piece opens its details`);
+  await page.click('.drawer .close'); await page.fill('#inv-q', '');
+  await page.click('[data-act=nav][data-v=packages]'); await page.waitForTimeout(60);
+  const kitsClosed = await page.$$eval('.sec-body', (e) => e.length);
+  await page.click('[data-act=kitSec]'); await page.waitForTimeout(60);
+  check(kitsClosed === 0 && !!(await page.$('.sec-body .kit-items .g-row')), `${name}: each kit is a closed section that opens to its pieces and prices`);
+  await shot(page, `${name}-kit-open`);
 }
 
 (async () => {
@@ -133,6 +149,16 @@ async function flows(page, name) {
       await page.click('.li[data-id=example-brand-spot]'); await page.waitForTimeout(100);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       check(overflow <= 0, `${name}: a job has no sideways scroll at phone width (${overflow}px)`);
+      const status = await page.evaluate(() => ({ compact: document.querySelector('.path-compact').offsetHeight, full: document.querySelector('.statusbar .path').offsetHeight, h: document.querySelector('.statusbar').offsetHeight }));
+      check(status.compact > 0 && status.full === 0 && status.h < 200, `${name}: the job's status is one compact bar on a phone (${status.h}px tall)`);
+      await page.evaluate(() => { const t = document.querySelector('.tabs'); window.scrollTo(0, t.getBoundingClientRect().top + window.scrollY - 300); });
+      const drift = [];
+      for (const t of ['price', 'paperwork', 'handoff', 'plan']) {
+        const before = await page.$eval('.tabs', (e) => e.getBoundingClientRect().top);
+        await page.click(`[data-act=tab][data-t=${t}]`); await page.waitForTimeout(80);
+        drift.push(Math.round((await page.$eval('.tabs', (e) => e.getBoundingClientRect().top)) - before));
+      }
+      check(drift.every((d) => Math.abs(d) <= 2), `${name}: switching tabs keeps the tab row in place (moved ${drift.join(', ')} px)`);
       await shot(page, `${name}-job`);
     } else {
       await flows(page, name);

@@ -277,7 +277,15 @@ input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; accent-
 .path .st.on { color: var(--muted); } .path .st.on::before { background: var(--good); }
 .path .st.now { color: var(--ink); } .path .st.now::before { background: var(--grad); box-shadow: 0 0 0 4px var(--accent-soft); }
 .path .ln { width: 18px; height: 2px; background: var(--line); border-radius: 1px; }
-.statusbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 16px; }
+.statusbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 14px 16px; }
+.statusbar .path { flex: 1 1 560px; min-width: 0; }
+.statusbar .path .st { white-space: nowrap; }
+.statusbar .actions { margin-left: auto; }
+.path-compact { display: none; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.path-compact .segs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.path-compact .segs i { height: 6px; border-radius: 3px; background: var(--line-strong); }
+.path-compact .segs i.on { background: var(--good); }
+.path-compact .segs i.now { background: var(--grad); }
 .tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .tabs button { border: 1px solid var(--line); background: var(--surface); padding: 9px 16px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 600; white-space: nowrap; display: inline-flex; gap: 8px; align-items: center; transition: all .15s; }
 .tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -510,3 +518,37 @@ select { max-width: 100%; }
   .q-item .ctl { grid-column: 1 / -1; justify-content: flex-start; padding-left: 44px; }
 }
 .tour-ctl .btn:hover, .tour-ctl .btn:active { transform: none; }
+
+/* ---------- dropdown sections (Gear, Kits) ---------- */
+.sec { overflow: hidden; }
+.sec-btn { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 16px 18px; border: 0; background: none; cursor: pointer; text-align: left; color: var(--ink); transition: background .15s; }
+.sec-btn:has(.sec-price) { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.sec-btn:hover { background: var(--surface-2); }
+.sec-t { font: 650 18px/1.25 var(--display); letter-spacing: -.01em; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.sec-price { font: 700 20px/1 var(--display); letter-spacing: -.02em; white-space: nowrap; text-align: right; }
+.sec-price small { font: 500 12px var(--body); color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+.chev { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); transition: transform .25s var(--ease); flex: none; }
+.sec.open .chev { transform: rotate(180deg); color: var(--ink); }
+.sec-list { border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); }
+.sec-body { border-top: 1px solid var(--line); padding: 18px; display: grid; gap: 16px; }
+.kit-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.g-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; padding: 12px 18px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; cursor: pointer; color: var(--ink); transition: background .15s; }
+.g-row:hover { background: var(--surface-2); }
+.g-row .ttl { font-weight: 600; }
+.g-row .pill { margin-top: 6px; }
+.g-side { display: grid; justify-items: end; gap: 5px; text-align: right; }
+.g-price { font: 700 17px/1 var(--display); letter-spacing: -.01em; white-space: nowrap; }
+.g-price small { font: 500 12px var(--body); color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+.card > .hd h2.t { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 760px) {
+  .statusbar .path { display: none; }
+  .path-compact { display: grid; }
+  .statusbar .actions { margin-left: 0; }
+  .sec-btn { gap: 12px; padding: 14px 16px; }
+  .chev { width: 28px; height: 28px; }
+  .sec-price { font-size: 18px; }
+  .g-row { padding: 12px 16px; }
+}
+.head-total { text-align: right; }
+@media (max-width: 760px) { .head-total { text-align: left; } }

@@ -51,6 +51,7 @@ const ICON = {
   tape: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   truck: '<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
@@ -147,8 +148,8 @@ const TOUR = [
   { job: 'handoff', icon: 'truck', title: 'Inside a job: Handoff', lead: 'Check-out and check-in, piece by piece.',
     how: ['Tick each piece as it goes out and as it comes back, with notes on its condition.', 'Gear is not released until it is covered and the agreement is signed.', 'A late return adds the late fee on its own.'] },
   { view: 'calendar', icon: 'calendar', title: 'Schedule', lead: 'Three weeks of jobs on one timeline.', how: ['Solid bars are shoot days. Striped bars are days the gear is out but not shooting.', 'Faded bars are jobs that are not confirmed yet.', 'Tap a job to open it.'] },
-  { view: 'inventory', icon: 'light', title: 'Gear', lead: 'Everything the pool owns, with the day rate to quote.', how: ['Search, or filter by type and by owner.', 'Pick two dates to see what is free.', 'Tap any piece for its details, or to add it to a job.'] },
-  { view: 'packages', icon: 'box', title: 'Kits', lead: 'Ready-made packages that price themselves.', how: ['Each kit shows its price for a day, two, three and a week.', 'Quote a kit on its own, or with the person who runs it.', 'If a piece inside changes price, the kit follows.'] },
+  { view: 'inventory', icon: 'light', title: 'Gear', lead: 'Everything the pool owns, with the day rate to quote.', how: ['Each type of gear is a section. Open one to see everything in it, or search across all of them.', 'Pick two dates to see what is free.', 'Tap any piece for its details, or to add it to a job.'] },
+  { view: 'packages', icon: 'box', title: 'Kits', lead: 'Ready-made packages that price themselves.', how: ['Open a kit to see every piece inside it and its price for a day, two, three and a week.', 'Quote a kit on its own, or with the person who runs it.', 'If a piece inside changes price, the kit follows.'] },
   { view: 'fund', icon: 'fund', title: 'Gear fund', lead: 'A share of every job goes toward the next piece of gear.', how: ['Set the share once. Each job locks it in when it is confirmed.', 'The ring shows how close you are to the next buy.', 'Reorder the buying list, add to it, and mark things bought.'] },
   { view: 'insurance', icon: 'shield', title: 'Insurance', lead: 'Both sides of cover in one place.', how: ['See how every upcoming job is covered.', 'Download the gear schedule your own insurer asks for.', 'Card holds and the damage waiver are set up in Settings.'] },
   { view: 'storefront', icon: 'store', title: 'Storefront', lead: 'The page your clients see.', how: ['Clients pick dates, add kits or single pieces, and send a request.', 'Availability updates for the dates they choose.', 'Requests arrive in Jobs, ready to quote.'] },
@@ -185,7 +186,8 @@ const state = {
   bookings: [], dbState: 'wait', readOnly: false,
   settings: Object.assign({}, DEFAULTS), catalogDoc: null, cat: buildCatalog(SNAPSHOT),
   fundPlan: { order: [], bought: {}, extra: [] },
-  inv: { q: '', cat: 'all', own: 'all', flag: false, from: '', to: '', view: 'grid' },
+  inv: { q: '', own: 'all', flag: false, from: '', to: '', open: {} },
+  kitOpen: {},
   bk: { filter: 'active' },
   cal: { start: mondayOf(todayStr()) },
   store: { group: 'packages', cart: [], form: { name: '', company: '', email: '', phone: '', project: '', pickup: '', ret: '', shootDays: 1, handoff: 'pickup', protection: 'coi', student: false, exempt: false }, sent: '' },
@@ -434,7 +436,7 @@ function render() {
   const views = { welcome: vWelcome, today: vToday, calendar: vCalendar, bookings: vBookings, booking: vBooking, inventory: vInventory, packages: vPackages, fund: vFund, insurance: vInsurance, storefront: vStore, roadmap: vRoadmap, settings: vSettings };
   const touringHere = state.touring && state.view !== 'welcome';
   main().innerHTML = (PREVIEW && state.view !== 'welcome' ? previewBar() : '') + (touringHere ? tourBar() : '') + (views[state.view] || vWelcome)() + (touringHere ? tourDock() : '');
-  const screen = state.view + (state.view === 'booking' ? ':' + state.bookingId + ':' + state.tab : '');
+  const screen = state.view + (state.view === 'booking' ? ':' + state.bookingId : '');
   if (screen !== lastScreen) { const v = $('.view', main()); if (v) v.classList.add('enter'); lastScreen = screen; }
   centerTourChip();
   renderDrawer();
@@ -662,16 +664,17 @@ function vBooking() {
   const c = chosen(b); const pw = paperwork(b); const ro = state.readOnly;
   const idx = FLOW.indexOf(b.status);
   const path = FLOW.map((s, i) => `<span class="st ${i < idx ? 'on' : ''} ${i === idx ? 'now' : ''}">${STATUS[s].label}</span>`).join('<span class="ln"></span>');
+  const compact = b.status === 'cancelled' ? '' : `<div class="path-compact"><div class="segs" aria-hidden="true">${FLOW.map((s, i) => `<i class="${i < idx ? 'on' : ''} ${i === idx ? 'now' : ''}"></i>`).join('')}</div><div class="small"><b>${STATUS[b.status].label}</b> · step ${idx + 1} of ${FLOW.length}${FLOW[idx + 1] ? ` · next: ${STATUS[FLOW[idx + 1]].label.toLowerCase()}` : ''}</div></div>`;
   const next = { request: ['quoted', 'Mark quote sent'], quoted: ['confirmed', 'Confirm job'], confirmed: ['__handoff', 'Hand off the gear'], out: ['__handoff', 'Check gear back in'], returned: ['closed', 'Close job'] }[b.status];
   const done = { paperwork: pw.contract === 'signed' && pw.protectionOk && pw.taxOk };
   const tab = (k, l) => `<button role="tab" data-act="tab" data-t="${k}" aria-selected="${state.tab === k}">${l}${k in done ? `<span class="ok ${done[k] ? 'y' : ''}"></span>` : ''}</button>`;
   const body = { plan: bPlan, price: bPrice, paperwork: bPaperwork, handoff: bHandoff }[state.tab] || bPlan;
   return `<section class="view">
-    <div class="hero"><div style="min-width:0;flex:1"><button class="btn ghost sm" data-act="nav" data-v="bookings">${icon('back', 14)} All jobs</button>
+    <div class="hero"><div style="min-width:0;flex:1 1 340px"><button class="btn ghost sm" data-act="nav" data-v="bookings">${icon('back', 14)} All jobs</button>
       <div class="eyebrow" style="margin-top:12px">${esc(b.ref)}${b.example ? ' · example, not a real job' : ''}${b.source === 'storefront' ? ' · came in from the storefront' : ''}</div>
       <h1>${esc(b.project || 'Untitled job')}</h1><p>${esc(clientName(b) || 'No client yet')} · ${esc(fmtDay(b.pickup))} to ${esc(fmtDay(b.returnDate))}</p></div>
-      <div style="text-align:right"><div class="big" id="headTotal">${money(c.total)}</div><div class="muted small">${BUDGET[b.budget || 'A'].name} · ${b.tax && b.tax.exempt ? 'tax exempt' : 'incl. sales tax'}</div></div></div>
-    <div class="card statusbar"><div class="path grow">${b.status === 'cancelled' ? pill('cancelled') : path}</div>
+      <div class="head-total"><div class="big" id="headTotal">${money(c.total)}</div><div class="muted small">${BUDGET[b.budget || 'A'].name} · ${b.tax && b.tax.exempt ? 'tax exempt' : 'incl. sales tax'}</div></div></div>
+    <div class="card statusbar"><div class="path">${b.status === 'cancelled' ? pill('cancelled') : path}</div>${compact}
       ${ro ? '<span class="pill">View only</span>' : `<div class="actions">${next ? `<button class="btn dark sm" data-act="advance" data-to="${next[0]}">${next[1]}</button>` : ''}
       ${b.status === 'cancelled' ? '<button class="btn sm" data-act="advance" data-to="quoted">Reopen</button>' : b.status !== 'closed' ? '<button class="btn ghost sm" data-act="advance" data-to="cancelled">Cancel job</button>' : ''}
       ${state.confirmDelete ? '<span class="small">Delete for good?</span><button class="btn danger sm" data-act="deleteBooking">Delete</button><button class="btn ghost sm" data-act="confirmDelete" data-v="0">Keep</button>' : '<button class="btn ghost sm" data-act="confirmDelete" data-v="1">Delete</button>'}</div>`}</div>
@@ -875,7 +878,7 @@ function bHandoff(b) {
 /* ---------- Gear ---------- */
 function invFiltered() {
   const f = state.inv; const q = f.q.trim().toLowerCase();
-  return state.cat.items.filter((i) => (f.cat === 'all' || i.cat === f.cat) && (f.own === 'all' || i.own === f.own) && (!f.flag || hasQuestion(i.id))
+  return state.cat.items.filter((i) => (f.own === 'all' || i.own === f.own) && (!f.flag || hasQuestion(i.id))
     && (!q || i.id.toLowerCase().includes(q) || i.name.toLowerCase().includes(q) || (i.kit || '').toLowerCase().includes(q)));
 }
 function availPill(it, from, to) {
@@ -883,33 +886,36 @@ function availPill(it, from, to) {
   const u = usage(it.id, from, to); const free = it.qty - u.firm;
   return free <= 0 ? '<span class="pill bad">Booked</span>' : free < it.qty ? `<span class="pill warn">${free} of ${it.qty} free</span>` : `<span class="pill good">Free${u.tent ? ', on hold' : ''}</span>`;
 }
-function gcard(i) {
-  const f = state.inv;
-  return `<button class="gcard" data-act="item" data-id="${i.id}"><div class="row between">${tile(i.cat)}${availPill(i, f.from, f.to) || (hasQuestion(i.id) ? '<span class="pill warn">To confirm</span>' : '')}</div>
-    <div><h3>${esc(i.name)}</h3><div class="muted small">${i.qty > 1 ? `${i.qty} in the pool` : i.qty === 0 ? 'Not itemized yet' : 'One in the pool'}${i.kit ? ' · ' + esc(i.kit) : ''}</div></div>
-    <div class="foot2">${i.rec != null ? `<span class="price">${money(i.rec)}<small> /day${perLens(i) ? ' per lens' : ''}</small></span>` : `<span class="muted small">${i.cat === 'Consumable' ? 'Billed at cost' : 'Included in the kit rate'}</span>`}${ownerTag(i.own)}</div></button>`;
+function gearRow(i) {
+  const f = state.inv; const av = availPill(i, f.from, f.to);
+  return `<button class="g-row" data-act="item" data-id="${i.id}">${tile(i.cat, true)}<div class="grow"><div class="ttl">${esc(i.name)}</div><div class="muted small">${i.qty > 1 ? `${i.qty} in the pool` : i.qty === 0 ? 'Not itemized yet' : 'One in the pool'}${i.kit ? ' · ' + esc(i.kit) : ''}</div>${av || (hasQuestion(i.id) ? '<span class="pill warn">To confirm</span>' : '')}</div>
+    <div class="g-side">${i.rec != null ? `<span class="g-price">${money(i.rec)}<small>/day${perLens(i) ? ' per lens' : ''}</small></span>` : `<span class="muted small">${i.cat === 'Consumable' ? 'At cost' : 'In kit rate'}</span>`}${ownerTag(i.own)}</div></button>`;
 }
 function vInventory() {
   const f = state.inv; const rows = invFiltered(); const cats = CAT_ORDER.filter((c) => state.cat.items.some((i) => i.cat === c));
-  const groups = CAT_ORDER.map((c) => [c, rows.filter((i) => i.cat === c)]).filter(([, l]) => l.length);
+  const allOpen = cats.every((c) => f.open[c]);
   return `<section class="view">
-    ${hero(`${state.cat.items.length} pieces across three kits`, 'The <em class="s">gear</em>', 'Everything the pool owns, with the day rate to quote. Tap anything for the details.')}
+    ${hero(`${state.cat.items.length} pieces across three kits`, 'The <em class="s">gear</em>', 'Everything the pool owns, with the day rate to quote. Open a section to see what is in it, or search.')}
     <div class="card"><div class="bd stack">
       <div class="form"><label class="field"><span>Search</span><input type="search" id="inv-q" data-inv="q" value="${esc(f.q)}" placeholder="Try “C-stand” or “Ronin”"></label>
         <label class="field"><span>Free from</span><input type="date" id="inv-from" data-inv="from" value="${esc(f.from)}"></label><label class="field"><span>Until</span><input type="date" id="inv-to" data-inv="to" value="${esc(f.to)}"></label></div>
-      <div class="chips"><button class="chip" data-act="invCat" data-v="all" aria-pressed="${f.cat === 'all'}">Everything</button>${cats.map((c) => `<button class="chip" data-act="invCat" data-v="${c}" aria-pressed="${f.cat === c}">${icon(CAT_ICON[c], 14)} ${CAT_LABEL[c]}</button>`).join('')}</div>
       <div class="row between wrap"><div class="chips"><button class="chip" data-act="invOwn" data-v="all" aria-pressed="${f.own === 'all'}">All owners</button>${OWN.map((o) => `<button class="chip" data-act="invOwn" data-v="${o}" aria-pressed="${f.own === o}"><span class="dot ${o}"></span>${esc(OWNERS[o].name)}</button>`).join('')}${OPEN.length || DATA_CHECKS.length ? `<button class="chip" data-act="invFlag" aria-pressed="${f.flag}">Details to confirm</button>` : ''}</div>
-        <div class="seg" role="group" aria-label="View"><button data-act="invView" data-v="grid" aria-pressed="${f.view !== 'list'}">Cards</button><button data-act="invView" data-v="list" aria-pressed="${f.view === 'list'}">List</button></div></div>
+        <button class="btn ghost sm" data-act="invAll" data-v="${allOpen ? '0' : '1'}">${allOpen ? 'Close all' : 'Open all'}</button></div>
     </div></div>
     ${previewNote('Owner names, what each piece is worth, its market price range and the notes behind each rate are hidden in the public preview. Day rates and quantities are real.')}
-    <div id="invBody">${invBody(rows, groups)}</div>
+    <div id="invBody">${invBody(rows)}</div>
   </section>`;
 }
-function invBody(rows, groups) {
-  const f = state.inv;
+function invBody(rows) {
+  const f = state.inv; const searching = !!f.q.trim();
   if (!rows.length) return '<div class="card"><div class="empty"><b>Nothing matches</b><span>Try another word or clear the filters.</span></div></div>';
-  if (f.view === 'list') return `<div class="card tbl"><table class="plain"><thead><tr><th>Item</th><th>Owner</th><th class="n">Qty</th><th class="n">Day rate</th>${f.from && f.to ? '<th>These dates</th>' : ''}</tr></thead><tbody>${rows.map((i) => `<tr class="click" data-act="item" data-id="${i.id}" tabindex="0"><td><div class="row">${tile(i.cat, true)}<span>${esc(i.name)}</span></div></td><td>${ownerTag(i.own)}</td><td class="n">${i.qty}</td><td class="n">${i.rec == null ? '—' : money(i.rec)}</td>${f.from && f.to ? `<td>${availPill(i, f.from, f.to)}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
-  return groups.map(([c, list]) => `<div class="sec-h">${tile(c, true)}<h2>${CAT_LABEL[c]}</h2><span class="muted small">${list.length}</span></div><div class="gear-grid">${list.map(gcard).join('')}</div>`).join('');
+  const groups = CAT_ORDER.map((c) => [c, rows.filter((i) => i.cat === c)]).filter(([, l]) => l.length);
+  return `<div class="stack" style="gap:12px">${groups.map(([c, list]) => {
+    const open = searching || !!f.open[c]; const rates = list.map((i) => i.rec).filter((x) => x != null);
+    const busy = f.from && f.to && f.from <= f.to ? list.filter((i) => i.qty && freeOn(i.id, f.from, f.to) <= 0).length : 0;
+    return `<div class="card sec ${open ? 'open' : ''}"><button class="sec-btn" data-act="invSec" data-c="${c}" aria-expanded="${open}">${tile(c)}<div class="grow"><div class="sec-t">${CAT_LABEL[c]}</div><div class="muted small">${plural(list.length, 'piece')}${rates.length ? ` · from ${money(Math.min(...rates))}/day` : ''}${busy ? ` · <span class="flag bad">${busy} booked those dates</span>` : ''}</div></div><span class="chev">${icon('down', 18)}</span></button>
+      ${open ? `<div class="sec-list">${list.map(gearRow).join('')}</div>` : ''}</div>`;
+  }).join('')}</div>`;
 }
 
 /* ---------- Kits ---------- */
@@ -917,15 +923,17 @@ function crewFor(pid) { const role = OPERATOR_FOR[pid]; const l = role && state.
 function vPackages() {
   const pctP = num(state.settings.possessionPct, 50) / 100;
   return `<section class="view">
-    ${hero('Ready to go', 'Kits that <em class="s">work together</em>', 'Each kit reprices itself when a piece inside it changes. Quote one as-is, or add the person who runs it.')}
-    <div class="grid3">${state.cat.packages.map((p) => { const op = crewFor(p.id); return `<article class="card kit"><div class="row between">${tile('Kit')}<span class="pill">${plural(p.ids.length, 'piece')}</span></div>
-      <div><h3>${esc(p.name)}</h3><p class="muted small" style="margin:6px 0 0">${esc(p.contents)}</p></div>
-      <div class="mid">${money(p.day)}<span class="muted small" style="font-family:var(--body);font-weight:500"> /day</span></div>
-      <div class="ladder">${[[1, '1 day'], [2, '2 days'], [3, '3 days'], [5, 'A week']].map(([d, l]) => `<div><span>${l}</span><b>${money(p.day * weekFactor(d))}</b></div>`).join('')}</div>
-      <dl class="kv"><dt>Held, not shooting</dt><dd>${money(p.day * pctP)}/day</dd>${op ? `<dt>With a ${esc(op.role)}</dt><dd>+${money(op.rate)}/day</dd>` : ''}</dl>
-      ${p.missing.length ? `<div class="note bad">Not on the gear list: ${p.missing.map(esc).join(', ')}. Priced at zero.</div>` : ''}
-      ${DATA_CHECKS.filter((d) => p.ids.includes(d.id)).map((d) => `<div class="note">${esc(d.title)} affects this price. See Roadmap.</div>`).join('')}
-      <div class="actions"><button class="btn dark sm" data-act="quotePkg" data-id="${p.id}">Quote this kit</button>${op ? `<button class="btn sm" data-act="quotePkg" data-id="${p.id}" data-crew="1">With a ${esc(op.role.split(' /')[0])}</button>` : ''}</div></article>`; }).join('')}</div>
+    ${hero('Ready to go', 'Kits that <em class="s">work together</em>', 'Open a kit to see what is inside and what it costs for longer. Each kit reprices itself when a piece inside it changes.')}
+    <div class="stack" style="gap:12px">${state.cat.packages.map((p) => { const op = crewFor(p.id); const open = !!state.kitOpen[p.id];
+      return `<div class="card sec ${open ? 'open' : ''}"><button class="sec-btn" data-act="kitSec" data-id="${p.id}" aria-expanded="${open}">${tile('Kit')}<div class="grow"><div class="sec-t">${esc(p.name)}</div><div class="muted small clamp">${plural(p.ids.length, 'piece')} · ${esc(p.contents)}</div></div><span class="sec-price">${money(p.day)}<small>/day</small></span><span class="chev">${icon('down', 18)}</span></button>
+      ${open ? `<div class="sec-body">
+        <div class="kit-items">${p.ids.map((id) => { const it = state.cat.byId[id]; if (!it) return ''; return `<button class="g-row" data-act="item" data-id="${id}">${tile(it.cat, true)}<div class="grow"><div class="ttl">${esc(it.name)}</div><div class="muted small">${it.qty > 1 ? `× ${it.qty}` : 'One'}</div></div><div class="g-side">${it.rec != null ? `<span class="g-price">${money(it.rec * it.qty)}<small>/day</small></span>` : '<span class="muted small">In kit rate</span>'}</div></button>`; }).join('')}</div>
+        <div class="ladder">${[[1, '1 day'], [2, '2 days'], [3, '3 days'], [5, 'A week']].map(([d, l]) => `<div><span>${l}</span><b>${money(p.day * weekFactor(d))}</b></div>`).join('')}</div>
+        <dl class="kv"><dt>Held, not shooting</dt><dd>${money(p.day * pctP)}/day</dd>${op ? `<dt>With a ${esc(op.role)}</dt><dd>+${money(op.rate)}/day</dd>` : ''}</dl>
+        ${p.missing.length ? `<div class="note bad">Not on the gear list: ${p.missing.map(esc).join(', ')}. Priced at zero.</div>` : ''}
+        ${DATA_CHECKS.filter((d) => p.ids.includes(d.id)).map((d) => `<div class="note">${esc(d.title)} affects this price. See Roadmap.</div>`).join('')}
+        <div class="actions"><button class="btn dark" data-act="quotePkg" data-id="${p.id}">Quote this kit</button>${op ? `<button class="btn" data-act="quotePkg" data-id="${p.id}" data-crew="1">With a ${esc(op.role.split(' /')[0])}</button>` : ''}</div>
+      </div>` : ''}</div>`; }).join('')}</div>
     <div class="card"><div class="hd"><h2 class="t">How longer rentals are priced</h2></div><div class="bd grid3">
       <div><b>Film week</b><p class="muted small" style="margin:4px 0 0">2 days bill as 1.85, 3 days as 2.5, and 4 to 7 days as 3. Each extra week adds 2.5.</p></div>
       <div><b>Weekend special</b><p class="muted small" style="margin:4px 0 0">${state.settings.weekendSpecial ? 'Out Friday (or Thursday from 3 pm), back Monday by 10:30 am: billed as one day.' : 'Switched off in Settings.'}</p></div>
@@ -1241,14 +1249,19 @@ const ACT = {
   openBooking(el) { state.tab = el.dataset.tab || (state.view === 'booking' ? state.tab : 'plan'); openBooking(el.dataset.id); },
   async newBooking() { const b = newBooking(); state.tab = 'plan'; await createBooking(b, true); },
   async quotePkg(el) { const b = newBooking(); addPackageTo(b, el.dataset.id); if (el.dataset.crew) { const op = crewFor(el.dataset.id); if (op) addCrewTo(b, op.role); } state.tab = 'plan'; await createBooking(b, true); },
-  tab(el) { state.tab = el.dataset.t; render(); window.scrollTo(0, 0); },
+  tab(el) {
+    const row = $('.tabs'); const before = row ? row.getBoundingClientRect().top : null;
+    state.tab = el.dataset.t; render();
+    const after = $('.tabs'); if (before != null && after) window.scrollBy(0, after.getBoundingClientRect().top - before);
+  },
   bkFilter(el) { state.bk.filter = el.dataset.f; render(); },
   calMove(el) { state.cal.start = addDays(state.cal.start, num(el.dataset.n)); render(); },
   calToday() { state.cal.start = mondayOf(todayStr()); render(); },
   invOwn(el) { state.inv.own = el.dataset.v; render(); },
-  invCat(el) { state.inv.cat = el.dataset.v; render(); },
+  invSec(el) { const c = el.dataset.c; state.inv.open = Object.assign({}, state.inv.open, { [c]: !state.inv.open[c] }); render(); },
+  invAll(el) { const on = el.dataset.v === '1'; state.inv.open = {}; if (on) CAT_ORDER.forEach((c) => (state.inv.open[c] = true)); render(); },
+  kitSec(el) { const k = el.dataset.id; state.kitOpen = Object.assign({}, state.kitOpen, { [k]: !state.kitOpen[k] }); render(); },
   invFlag() { state.inv.flag = !state.inv.flag; render(); },
-  invView(el) { state.inv.view = el.dataset.v; render(); },
   item(el) { state.drawer = { kind: 'item', id: el.dataset.id }; renderDrawer(); const c = $('.drawer .close'); if (c) c.focus(); },
   closeDrawer() { const wasPick = state.drawer && state.drawer.kind === 'pick'; state.drawer = null; if (wasPick) render(); else renderDrawer(); },
   openPick() { state.pick = { q: '', cat: 'all' }; state.drawer = { kind: 'pick' }; renderDrawer(); const q = $('#pick-q'); if (q) q.focus(); },
@@ -1380,7 +1393,7 @@ function onField(e) {
   if (el.dataset.crewrole != null) { state.crewRole = el.value; return; }
   if (el.dataset.pickq != null) { state.pick.q = el.value; const l = $('#pickList'); if (l) { const b = state.draft; const q = el.value.trim().toLowerCase(); const list = state.cat.items.filter((i) => i.qty > 0 && i.rec != null && (state.pick.cat === 'all' || i.cat === state.pick.cat) && (!q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.kit || '').toLowerCase().includes(q))); l.innerHTML = pickList(list, new Set(((b && b.lines) || []).map((x) => x.id)), b); } return; }
   if (el.dataset.s != null) { const k = el.dataset.s; state.settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' || el.type === 'range' ? num(el.value) : el.value; saveSettingsSoon(); if (full) render(); else renderChrome(); return; }
-  if (el.dataset.inv != null) { state.inv[el.dataset.inv] = el.value; if (full) render(); else { const rows = invFiltered(); const groups = CAT_ORDER.map((c) => [c, rows.filter((i) => i.cat === c)]).filter(([, l]) => l.length); const t = $('#invBody'); if (t) t.innerHTML = invBody(rows, groups); } return; }
+  if (el.dataset.inv != null) { state.inv[el.dataset.inv] = el.value; if (full) render(); else { const t = $('#invBody'); if (t) t.innerHTML = invBody(invFiltered()); } return; }
   if (el.dataset.sf != null) { state.store.form[el.dataset.sf] = el.type === 'checkbox' ? el.checked : el.value; if (full) render(); return; }
   if (el.dataset.storecrew != null) { const c = state.store.cart.find((x) => x.key === el.dataset.storecrew); if (c) c.crew = el.checked; render(); return; }
   if (el.dataset.cartqty != null) { const c = state.store.cart[num(el.dataset.cartqty)]; if (c) c.qty = Math.max(1, num(el.value, 1)); requestRender(); return; }
